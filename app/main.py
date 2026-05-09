@@ -1,0 +1,41 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from app.core.database import Base, engine
+from app.modules.auth import router as auth_router
+
+# Crear tablas en la base de datos
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI(
+    title="WaitLess API",
+    description="Backend API REST para el sistema de gestión de restaurantes WaitLess",
+    version="1.0.0"
+)
+
+# Configurar CORS para que Flutter pueda conectarse
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Registrar routers
+app.include_router(
+    auth_router.router,
+    prefix="/auth",
+    tags=["Autenticación"]
+)
+
+@app.get("/")
+def root():
+    return {
+        "message": "WaitLess API funcionando",
+        "version": "1.0.0",
+        "docs": "/docs"
+    }
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
