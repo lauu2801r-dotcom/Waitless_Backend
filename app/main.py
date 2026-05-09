@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.database import Base, engine
-from app.modules.auth import router as auth_router
+from app.modules.auth.router import router as auth_router
+from app.modules.mesas.router import router as mesas_router
 
 # Crear tablas en la base de datos
 Base.metadata.create_all(bind=engine)
@@ -12,7 +13,7 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configurar CORS para que Flutter pueda conectarse
+# Configurar CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,11 +23,8 @@ app.add_middleware(
 )
 
 # Registrar routers
-app.include_router(
-    auth_router.router,
-    prefix="/auth",
-    tags=["Autenticación"]
-)
+app.include_router(auth_router, prefix="/auth", tags=["Autenticación"])
+app.include_router(mesas_router, prefix="/mesas", tags=["Mesas"])
 
 @app.get("/")
 def root():
