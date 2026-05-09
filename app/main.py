@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.database import Base, engine
 from app.modules.auth.router import router as auth_router
 from app.modules.mesas.router import router as mesas_router
+from app.modules.menu.router import router as menu_router
 
 # Crear tablas en la base de datos
 Base.metadata.create_all(bind=engine)
@@ -25,6 +26,7 @@ app.add_middleware(
 # Registrar routers
 app.include_router(auth_router, prefix="/auth", tags=["Autenticación"])
 app.include_router(mesas_router, prefix="/mesas", tags=["Mesas"])
+app.include_router(menu_router, prefix="/menu", tags=["Menú"])
 
 @app.get("/")
 def root():
