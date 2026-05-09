@@ -4,8 +4,8 @@ from app.core.database import Base, engine
 from app.modules.auth.router import router as auth_router
 from app.modules.mesas.router import router as mesas_router
 from app.modules.menu.router import router as menu_router
+from app.modules.reservas.router import router as reservas_router
 
-# Crear tablas en la base de datos
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -14,7 +14,6 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configurar CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,10 +22,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Registrar routers
 app.include_router(auth_router, prefix="/auth", tags=["Autenticación"])
 app.include_router(mesas_router, prefix="/mesas", tags=["Mesas"])
 app.include_router(menu_router, prefix="/menu", tags=["Menú"])
+app.include_router(reservas_router, prefix="/reservas", tags=["Reservas"])
 
 @app.get("/")
 def root():
