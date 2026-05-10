@@ -1,7 +1,14 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import datetime
-from app.modules.auth.models import RolUsuario
+import enum
+
+
+class RolUsuario(str, enum.Enum):
+    cliente       = "cliente"
+    empleado      = "empleado"
+    administrador = "administrador"
+
 
 class UsuarioRegistro(BaseModel):
     nombre: str
@@ -9,6 +16,9 @@ class UsuarioRegistro(BaseModel):
     email: EmailStr
     telefono: Optional[str] = None
     password: str
+    rol: Optional[RolUsuario] = RolUsuario.cliente
+    nombre_restaurante: Optional[str] = None
+    codigo_negocio: Optional[str] = None
 
 class UsuarioLogin(BaseModel):
     email: EmailStr
@@ -30,6 +40,7 @@ class UsuarioRespuesta(BaseModel):
     rol: RolUsuario
     verificado: bool
     creado_en: datetime
+    nombre_restaurante: Optional[str] = None  # ✅ nuevo campo
 
     class Config:
         from_attributes = True
