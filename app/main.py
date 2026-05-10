@@ -31,6 +31,12 @@ app.include_router(reservas_router, prefix="/reservas", tags=["Reservas"])
 app.include_router(pedidos_router, prefix="/pedidos", tags=["Pedidos"])
 app.include_router(ws_router, prefix="/ws", tags=["WebSocket"])
 
+from app.core.seed import seed_mesas
+
+@app.on_event("startup")
+async def startup_event():
+    seed_mesas()
+
 @app.get("/")
 def root():
     return {
