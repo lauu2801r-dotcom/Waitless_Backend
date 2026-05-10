@@ -5,7 +5,7 @@ from app.modules.auth.models import RolUsuario
 
 class UsuarioRegistro(BaseModel):
     nombre: str
-    apellido: str
+    apellido: Optional[str] = ""
     email: EmailStr
     telefono: Optional[str] = None
     password: str

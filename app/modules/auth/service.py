@@ -41,50 +41,72 @@ async def enviar_otp_email(email: str, otp: str):
     await fm.send_message(message)
 
 async def registrar_usuario(db: Session, datos: UsuarioRegistro):
-    # Verificar si el email ya existe
-    usuario_existente = db.query(Usuario).filter(
-        Usuario.email == datos.email
-    ).first()
-    
-    if usuario_existente:
-        if usuario_existente.verificado:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El correo ya está registrado"
-            )
-        else:
-            # Si existe pero no verificado, actualizar OTP
-            otp = generate_otp()
-            usuario_existente.otp_code = otp
-            usuario_existente.otp_expira = datetime.utcnow() + timedelta(minutes=10)
-            db.commit()
-            await enviar_otp_email(datos.email, otp)
-            return {"message": "Código reenviado a tu correo"}
+    try:
+        email_normalizado = datos.email.lower().strip()
+        
+        usuario_existente = db.query(Usuario).filter(
+            Usuario.email == email_normalizado
+        ).first()
+        
+        if usuario_existente:
+            if usuario_existente.verificado:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="El correo ya está registrado"
+                )
+            else:
+                otp = generate_otp()
+                usuario_existente.otp_code = otp
+                usuario_existente.otp_expira = datetime.utcnow() + timedelta(minutes=10)
+                db.commit()
+                try:
+                    await enviar_otp_email(email_normalizado, otp)
+                except Exception as e:
+                    print(f"Error enviando correo: {e}")
+                return {"message": "Código reenviado a tu correo"}
 
-    # Crear nuevo usuario
-    otp = generate_otp()
-    nuevo_usuario = Usuario(
-        nombre=datos.nombre,
-        apellido=datos.apellido,
-        email=datos.email,
-        telefono=datos.telefono,
-        hashed_password=get_password_hash(datos.password),
-        otp_code=otp,
-        otp_expira=datetime.utcnow() + timedelta(minutes=10)
-    )
-    db.add(nuevo_usuario)
-    db.commit()
-    db.refresh(nuevo_usuario)
+        otp = generate_otp()
+        nuevo_usuario = Usuario(
+            nombre=datos.nombre,
+            apellido=datos.apellido,
+            email=email_normalizado,
+            telefono=datos.telefono,
+            hashed_password=get_password_hash(datos.password),
+            otp_code=otp,
+            otp_expira=datetime.utcnow() + timedelta(minutes=10)
+        )
+        db.add(nuevo_usuario)
+        db.commit()
+        db.refresh(nuevo_usuario)
+        print(f"✅ Usuario guardado: {nuevo_usuario.id} - {nuevo_usuario.email}")
+        
+        try:
+            await enviar_otp_email(email_normalizado, otp)
+            print(f"✅ Correo enviado a {email_normalizado}")
+        except Exception as e:
+            print(f"⚠️ Error enviando correo: {e} - pero usuario guardado")
+        
+        return {"message": "Usuario registrado. Revisa tu correo para verificar tu cuenta"}
     
-    # Enviar OTP por correo
-    await enviar_otp_email(datos.email, otp)
-    
-    return {"message": "Usuario registrado. Revisa tu correo para verificar tu cuenta"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Error en registro: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al registrar: {str(e)}"
+        )
 
 async def verificar_otp(db: Session, datos: VerificarOTP):
+    email_normalizado = datos.email.lower().strip()
+    print(f"🔍 Buscando usuario con email: {email_normalizado}")
+    
     usuario = db.query(Usuario).filter(
-        Usuario.email == datos.email
+        Usuario.email == email_normalizado
     ).first()
+    
+    print(f"🔍 Usuario encontrado: {usuario}")
     
     if not usuario:
         raise HTTPException(
@@ -110,14 +132,12 @@ async def verificar_otp(db: Session, datos: VerificarOTP):
             detail="El código ha expirado. Solicita uno nuevo"
         )
     
-    # Verificar cuenta
     usuario.verificado = True
     usuario.otp_code = None
     usuario.otp_expira = None
     db.commit()
     db.refresh(usuario)
     
-    # Generar token
     token = create_access_token(data={
         "sub": str(usuario.id),
         "email": usuario.email,
@@ -131,8 +151,10 @@ async def verificar_otp(db: Session, datos: VerificarOTP):
     }
 
 async def login_usuario(db: Session, datos: UsuarioLogin):
+    email_normalizado = datos.email.lower().strip()
+    
     usuario = db.query(Usuario).filter(
-        Usuario.email == datos.email
+        Usuario.email == email_normalizado
     ).first()
     
     if not usuario:
@@ -172,8 +194,10 @@ async def login_usuario(db: Session, datos: UsuarioLogin):
     }
 
 async def reenviar_otp(db: Session, email: str):
+    email_normalizado = email.lower().strip()
+    
     usuario = db.query(Usuario).filter(
-        Usuario.email == email
+        Usuario.email == email_normalizado
     ).first()
     
     if not usuario:
@@ -193,6 +217,9 @@ async def reenviar_otp(db: Session, email: str):
     usuario.otp_expira = datetime.utcnow() + timedelta(minutes=10)
     db.commit()
     
-    await enviar_otp_email(email, otp)
+    try:
+        await enviar_otp_email(email_normalizado, otp)
+    except Exception as e:
+        print(f"Error enviando correo: {e}")
     
     return {"message": "Código reenviado a tu correo"}
