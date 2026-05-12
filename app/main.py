@@ -8,6 +8,7 @@ from app.modules.reservas.router import router as reservas_router
 from app.modules.pedidos.router import router as pedidos_router
 from app.modules.reportes.router import router as reportes_router
 from app.websocket.router import router as ws_router
+from app.ia.router import router as ia_router          # ← NUEVO
 
 Base.metadata.create_all(bind=engine)
 
@@ -25,13 +26,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth_router, prefix="/auth", tags=["Autenticación"])
-app.include_router(mesas_router, prefix="/mesas", tags=["Mesas"])
-app.include_router(menu_router, prefix="/menu", tags=["Menú"])
-app.include_router(reservas_router, prefix="/reservas", tags=["Reservas"])
-app.include_router(pedidos_router, prefix="/pedidos", tags=["Pedidos"])
-app.include_router(reportes_router, prefix="/reportes", tags=["Reportes"])
-app.include_router(ws_router, prefix="/ws", tags=["WebSocket"])
+app.include_router(auth_router,     prefix="/auth",      tags=["Autenticación"])
+app.include_router(mesas_router,    prefix="/mesas",     tags=["Mesas"])
+app.include_router(menu_router,     prefix="/menu",      tags=["Menú"])
+app.include_router(reservas_router, prefix="/reservas",  tags=["Reservas"])
+app.include_router(pedidos_router,  prefix="/pedidos",   tags=["Pedidos"])
+app.include_router(reportes_router, prefix="/reportes",  tags=["Reportes"])
+app.include_router(ws_router,       prefix="/ws",        tags=["WebSocket"])
+app.include_router(ia_router,       prefix="/ia",        tags=["IA"])   # ← NUEVO
 
 from app.core.seed import seed_mesas
 
