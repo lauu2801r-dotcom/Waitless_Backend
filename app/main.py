@@ -8,7 +8,8 @@ from app.modules.reservas.router import router as reservas_router
 from app.modules.pedidos.router import router as pedidos_router
 from app.modules.reportes.router import router as reportes_router
 from app.websocket.router import router as ws_router
-from app.ia.router import router as ia_router          # ← NUEVO
+from app.ia.router import router as ia_router    
+from app.ia import models as ia_models     
 
 Base.metadata.create_all(bind=engine)
 
