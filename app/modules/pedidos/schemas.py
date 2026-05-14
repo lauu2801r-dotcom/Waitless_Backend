@@ -90,3 +90,10 @@ class PedidoRespuesta(BaseModel):
 
     class Config:
         from_attributes = True
+
+class PedidoEditarItems(BaseModel):
+    items: List[ItemPedidoCrear]
+    notas: Optional[str] = None
+    tipo_entrega: TipoEntrega = TipoEntrega.restaurante
+    direccion_domicilio: Optional[str] = None
+

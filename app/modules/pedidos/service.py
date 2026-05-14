@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session, joinedload
 from fastapi import HTTPException, status
 from app.modules.pedidos.models import Pedido, ItemPedido, EstadoPedido
-from app.modules.pedidos.schemas import PedidoCrear, PedidoActualizar
+from app.modules.pedidos.schemas import PedidoCrear, PedidoActualizar, PedidoEditarItems
 from app.modules.menu.models import Producto
 from app.modules.mesas.models import Mesa, EstadoMesa
 
@@ -134,3 +134,59 @@ def cancelar_pedido(db: Session, pedido_id: int, usuario_id: int):
     pedido.estado = EstadoPedido.cancelado
     db.commit()
     return {"message": "Pedido cancelado exitosamente"}
+
+def editar_items_pedido(db: Session, pedido_id: int, usuario_id: int, datos: PedidoEditarItems):
+    pedido = obtener_pedido(db, pedido_id)
+
+    if pedido.usuario_id != usuario_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permiso para editar este pedido"
+        )
+
+    if pedido.estado != EstadoPedido.pendiente:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Solo se pueden editar pedidos en estado pendiente"
+        )
+
+    for item in pedido.items:
+        db.delete(item)
+
+    total = 0.0
+    nuevos_items = []
+
+    for item in datos.items:
+        producto = db.query(Producto).filter(
+            Producto.id == item.producto_id,
+            Producto.activo == True,
+            Producto.disponible == True
+        ).first()
+
+        if not producto:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Producto {item.producto_id} no encontrado o no disponible"
+            )
+
+        subtotal = producto.precio * item.cantidad
+        total += subtotal
+
+        nuevos_items.append(ItemPedido(
+            pedido_id=pedido_id,
+            producto_id=item.producto_id,
+            cantidad=item.cantidad,
+            precio_unitario=producto.precio,
+            subtotal=subtotal,
+            notas=item.notas
+        ))
+
+    pedido.items = nuevos_items
+    pedido.total = total
+    pedido.notas = datos.notas
+    pedido.tipo_entrega = datos.tipo_entrega
+    pedido.direccion_domicilio = datos.direccion_domicilio
+
+    db.commit()
+    db.refresh(pedido)
+    return pedido
