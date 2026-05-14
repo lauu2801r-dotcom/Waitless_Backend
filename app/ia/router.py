@@ -1,17 +1,26 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+"""
+WaitLess — Router del Módulo de IA
+====================================
+Endpoints:
+  POST /ia/entrenar     → Entrena o re-entrena el modelo
+  GET  /ia/predecir     → Predice tiempo de espera
+  GET  /ia/afluencia    → Curva de ocupación por hora
+  GET  /ia/metricas     → Métricas de precisión del modelo
+  GET  /ia/estado       → Estado del modelo
+"""
+
+from fastapi import APIRouter, Depends, Header, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import Optional
+
 from app.core.database import get_db
 from app.core.security import verify_token
-from app.modules.pedidos import service
-from app.modules.pedidos.schemas import (
-    PedidoCrear,
-    PedidoActualizar,
-    PedidoRespuesta,
-    PedidoEditarItems,
-)
+from app.ia.entrenamiento import entrenar_modelo, modelo_existe
+from app.ia.prediccion import predecir_tiempo_espera, predecir_afluencia_hora, info_modelo
+from app.ia.metricas import calcular_metricas_modelo
 
 router = APIRouter()
+
 
 def get_current_user(authorization: Optional[str] = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
@@ -28,65 +37,59 @@ def get_current_user(authorization: Optional[str] = Header(None)):
         )
     return payload
 
-@router.post("/", response_model=PedidoRespuesta)
-def crear_pedido(
-    datos: PedidoCrear,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    return service.crear_pedido(db, datos, int(current_user["sub"]))
 
-@router.get("/mis-pedidos", response_model=List[PedidoRespuesta])
-def mis_pedidos(
+@router.post("/entrenar")
+def entrenar(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    return service.obtener_pedidos_usuario(db, int(current_user["sub"]))
+    return entrenar_modelo(db)
 
-@router.get("/todos", response_model=List[PedidoRespuesta])
-def todos_pedidos(
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    return service.obtener_todos_pedidos(db)
 
-@router.get("/activos", response_model=List[PedidoRespuesta])
-def pedidos_activos(
+@router.get("/predecir")
+def predecir(
+    hora: int = Query(..., ge=0, le=23),
+    dia_semana: int = Query(..., ge=0, le=6),
+    mesas_ocupadas: int = Query(..., ge=0),
+    total_items: int = Query(..., ge=1),
+    total_pedido: float = Query(..., gt=0),
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    return service.obtener_pedidos_activos(db)
+    if not modelo_existe():
+        entrenar_modelo(db)
+    return predecir_tiempo_espera(
+        hora=hora,
+        dia_semana=dia_semana,
+        mesas_ocupadas=mesas_ocupadas,
+        total_items=total_items,
+        total_pedido=total_pedido,
+        db=db,
+    )
 
-@router.get("/{pedido_id}", response_model=PedidoRespuesta)
-def obtener_pedido(
-    pedido_id: int,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    return service.obtener_pedido(db, pedido_id)
 
-@router.patch("/{pedido_id}", response_model=PedidoRespuesta)
-def actualizar_pedido(
-    pedido_id: int,
-    datos: PedidoActualizar,
+@router.get("/afluencia")
+def afluencia(
+    dia_semana: int = Query(..., ge=0, le=6),
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    return service.actualizar_estado_pedido(db, pedido_id, datos)
+    if not modelo_existe():
+        entrenar_modelo(db)
+    return predecir_afluencia_hora(dia_semana=dia_semana)
 
-@router.delete("/{pedido_id}")
-def cancelar_pedido(
-    pedido_id: int,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    return service.cancelar_pedido(db, pedido_id, int(current_user["sub"]))
 
-@router.put("/{pedido_id}/items", response_model=PedidoRespuesta)
-def editar_items_pedido(
-    pedido_id: int,
-    datos: PedidoEditarItems,
+@router.get("/metricas")
+def metricas(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    return service.editar_items_pedido(db, pedido_id, int(current_user["sub"]), datos)
+    return calcular_metricas_modelo(db)
+
+
+@router.get("/estado")
+def estado():
+    return {
+        **info_modelo(),
+        "modelo_existe": modelo_existe(),
+    }

@@ -1,8 +1,3 @@
-# ══════════════════════════════════════════════════════════════
-#  PARCHE — app/modules/pedidos/schemas.py
-#  Añade tipo_entrega y direccion_domicilio al schema de pedidos
-# ══════════════════════════════════════════════════════════════
-
 from pydantic import BaseModel, model_validator
 from typing import Optional, List
 from datetime import datetime
