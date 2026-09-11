@@ -62,6 +62,7 @@ def _construir_respuesta_usuario(usuario: Usuario, db: Session) -> dict:
     }
 
 async def registrar_usuario(db: Session, datos: UsuarioRegistro):
+    print(f"📦 DATOS RECIBIDOS: {datos.model_dump()}")
     try:
         email_normalizado = datos.email.lower().strip()
 
