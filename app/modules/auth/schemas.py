@@ -19,6 +19,8 @@ class UsuarioRegistro(BaseModel):
     rol: Optional[RolUsuario] = RolUsuario.cliente
     nombre_restaurante: Optional[str] = None
     codigo_negocio: Optional[str] = None
+    # Debe ser true para poder registrarse (Ley 1581 de 2012)
+    acepta_politica: bool = False
 
 class UsuarioLogin(BaseModel):
     email: EmailStr
@@ -40,7 +42,7 @@ class UsuarioRespuesta(BaseModel):
     rol: RolUsuario
     verificado: bool
     creado_en: datetime
-    nombre_restaurante: Optional[str] = None  # ✅ nuevo campo
+    nombre_restaurante: Optional[str] = None
 
     class Config:
         from_attributes = True
