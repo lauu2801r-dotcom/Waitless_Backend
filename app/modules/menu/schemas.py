@@ -26,6 +26,8 @@ class ProductoRespuesta(BaseModel):
     imagen_url: Optional[str]
     disponible: bool
     creado_en: datetime
+    restaurante_id: Optional[int] = None
+    restaurante_nombre: Optional[str] = None
 
     class Config:
         from_attributes = True

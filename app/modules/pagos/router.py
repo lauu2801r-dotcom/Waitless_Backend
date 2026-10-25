@@ -5,7 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import admin_o_empleado, es_personal, get_current_user, solo_admin
+from app.core.deps import admin_o_empleado, es_personal, get_current_user, restaurante_id_de, solo_admin
 from app.modules.auditoria import service as auditoria
 from app.modules.pagos import service
 from app.modules.pagos.models import EstadoFactura, MetodoPago
@@ -69,7 +69,10 @@ def listar_facturas(
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db), current_user: dict = Depends(admin_o_empleado),
 ):
-    return service.listar_facturas(db, None, estado, metodo, desde, hasta, limit, offset)
+    return service.listar_facturas(
+        db, None, estado, metodo, desde, hasta, limit, offset,
+        restaurante_id=restaurante_id_de(db, current_user),
+    )
 
 
 @router.get("/facturas/{factura_id}", response_model=FacturaDetalle)
@@ -105,12 +108,12 @@ def resumen(
     periodo: str = Query("hoy", pattern="^(hoy|semana|mes|anio)$"),
     db: Session = Depends(get_db), current_user: dict = Depends(solo_admin),
 ):
-    return service.resumen(db, periodo)
+    return service.resumen(db, periodo, restaurante_id_de(db, current_user))
 
 
 @router.get("/por-cobrar", response_model=List[PedidoPorCobrar])
 def por_cobrar(db: Session = Depends(get_db), current_user: dict = Depends(admin_o_empleado)):
-    return service.por_cobrar(db)
+    return service.por_cobrar(db, restaurante_id_de(db, current_user))
 
 
 @router.get("/pedido/{pedido_id}", response_model=List[PagoRespuesta])

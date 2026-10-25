@@ -39,6 +39,7 @@ class FacturaResumen(BaseModel):
     numero: Optional[str] = None
     pedido_id: int
     concepto: str
+    restaurante: Optional[str] = None
     total: float
     metodo: MetodoPago
     estado: EstadoFactura

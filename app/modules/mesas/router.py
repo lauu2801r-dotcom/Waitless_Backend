@@ -1,10 +1,10 @@
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import admin_o_empleado, get_current_user, solo_admin
+from app.core.deps import admin_o_empleado, get_current_user, restaurante_id_de, solo_admin
 from app.modules.auditoria import service as auditoria
 from app.websocket.manager import manager
 from app.modules.mesas import service
@@ -21,7 +21,10 @@ def crear_mesa(
     db: Session = Depends(get_db),
     current_user: dict = Depends(solo_admin),
 ):
-    mesa = service.crear_mesa(db, datos)
+    rid = restaurante_id_de(db, current_user)
+    if rid is None:
+        raise HTTPException(400, "Tu cuenta no tiene un restaurante asociado")
+    mesa = service.crear_mesa(db, datos, rid)
     manager.emitir("mesas", {"tipo": "mesas_actualizadas", "mesa_id": mesa.id, "mensaje": f"Mesa {mesa.numero} creada"})
     auditoria.registrar(
         db, "mesa_creada", usuario_id=int(current_user["sub"]),
@@ -33,18 +36,22 @@ def crear_mesa(
 
 @router.get("/", response_model=List[MesaRespuesta])
 def listar_mesas(
+    restaurante_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    return service.obtener_mesas(db)
+    # Un administrador solo ve las mesas de su restaurante
+    propio = restaurante_id_de(db, current_user)
+    return service.obtener_mesas(db, restaurante_id=propio or restaurante_id)
 
 
 @router.get("/disponibles", response_model=List[MesaRespuesta])
 def mesas_disponibles(
+    restaurante_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    return service.obtener_mesas_disponibles(db)
+    return service.obtener_mesas_disponibles(db, restaurante_id)
 
 
 @router.get("/{mesa_id}", response_model=MesaRespuesta)

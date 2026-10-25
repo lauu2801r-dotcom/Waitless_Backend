@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import admin_o_empleado, es_personal, get_current_user
+from app.core.deps import admin_o_empleado, es_personal, get_current_user, restaurante_id_de
 from app.modules.auditoria import service as auditoria
 from app.modules.pagos.service import pedido_pagado
 from app.modules.pedidos import service
@@ -59,7 +59,7 @@ def todos_pedidos(
     db: Session = Depends(get_db),
     current_user: dict = Depends(admin_o_empleado),
 ):
-    return service.obtener_todos_pedidos(db)
+    return service.obtener_todos_pedidos(db, restaurante_id_de(db, current_user))
 
 
 @router.get("/activos", response_model=List[PedidoRespuesta])
@@ -67,7 +67,7 @@ def pedidos_activos(
     db: Session = Depends(get_db),
     current_user: dict = Depends(admin_o_empleado),
 ):
-    return service.obtener_pedidos_activos(db)
+    return service.obtener_pedidos_activos(db, restaurante_id_de(db, current_user))
 
 
 @router.get("/{pedido_id}", response_model=PedidoRespuesta)

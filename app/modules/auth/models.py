@@ -43,6 +43,10 @@ class Restaurante(Base):
     nombre            = Column(String(150), nullable=False)
     codigo_negocio    = Column(String(50), nullable=False)
     administrador_id  = Column(Integer, ForeignKey("usuarios.id"), unique=True, nullable=False)
+    descripcion       = Column(String(255), nullable=True)
+    tipo_cocina       = Column(String(100), nullable=True)
+    emoji             = Column(String(10), nullable=True)
+    activo            = Column(Boolean, nullable=False, default=True, server_default="1")
     creado_en         = Column(DateTime, server_default=func.now())
     actualizado_en    = Column(DateTime, onupdate=func.now())
 

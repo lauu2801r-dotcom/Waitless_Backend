@@ -22,6 +22,7 @@ class MesaRespuesta(BaseModel):
     ubicacion: Optional[str]
     activa: bool
     creado_en: datetime
+    restaurante_id: Optional[int] = None
 
     class Config:
         from_attributes = True

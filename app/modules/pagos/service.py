@@ -109,6 +109,7 @@ def pagar(db: Session, datos: PagoCrear, usuario_id: int, email: str, rol: str):
     if aprobado:
         snapshot = {
             "concepto": _concepto(pedido),
+            "restaurante": pedido.restaurante.nombre if pedido.restaurante else None,
             "cliente_email": pedido.usuario.email if pedido.usuario else None,
             "items": [
                 {
@@ -149,8 +150,11 @@ def listar_facturas(
     hasta: Optional[datetime] = None,
     limit: int = 100,
     offset: int = 0,
+    restaurante_id: Optional[int] = None,
 ):
     q = db.query(Factura)
+    if restaurante_id is not None:
+        q = q.join(Pedido, Pedido.id == Factura.pedido_id).filter(Pedido.restaurante_id == restaurante_id)
     if usuario_id is not None:
         q = q.filter(Factura.usuario_id == usuario_id)
     if estado:
@@ -205,19 +209,20 @@ def _inicio_periodo(periodo: str) -> datetime:
     return inicio.astimezone(timezone.utc).replace(tzinfo=None)
 
 
-def por_cobrar(db: Session) -> List[PedidoPorCobrar]:
+def por_cobrar(db: Session, restaurante_id: Optional[int] = None) -> List[PedidoPorCobrar]:
     """Pedidos servidos (listo/entregado) que todavía no tienen factura pagada."""
     pagados = db.query(Factura.pedido_id).filter(Factura.estado == EstadoFactura.pagada)
-    pedidos = (
+    consulta = (
         db.query(Pedido)
         .options(joinedload(Pedido.items), joinedload(Pedido.mesa))
         .filter(
             Pedido.estado.in_([EstadoPedido.listo, EstadoPedido.entregado]),
             ~Pedido.id.in_(pagados),
         )
-        .order_by(Pedido.id)
-        .all()
     )
+    if restaurante_id is not None:
+        consulta = consulta.filter(Pedido.restaurante_id == restaurante_id)
+    pedidos = consulta.order_by(Pedido.id).all()
     resultado = []
     for p in pedidos:
         subtotal = round(p.total or 0, 2)
@@ -229,9 +234,12 @@ def por_cobrar(db: Session) -> List[PedidoPorCobrar]:
     return resultado
 
 
-def resumen(db: Session, periodo: str) -> ResumenVentas:
+def resumen(db: Session, periodo: str, restaurante_id: Optional[int] = None) -> ResumenVentas:
     desde = _inicio_periodo(periodo)
-    facturas = db.query(Factura).filter(Factura.pagado_en >= desde).all()
+    q = db.query(Factura).filter(Factura.pagado_en >= desde)
+    if restaurante_id is not None:
+        q = q.join(Pedido, Pedido.id == Factura.pedido_id).filter(Pedido.restaurante_id == restaurante_id)
+    facturas = q.all()
     pagadas = [f for f in facturas if f.estado == EstadoFactura.pagada]
     total = round(sum(f.total for f in pagadas), 2)
     por_metodo = {}
@@ -244,7 +252,7 @@ def resumen(db: Session, periodo: str) -> ResumenVentas:
         periodo=periodo, desde=desde, total_ventas=total, total_facturas=len(pagadas),
         ticket_promedio=round(total / len(pagadas), 2) if pagadas else 0.0,
         anuladas=len(facturas) - len(pagadas),
-        por_cobrar=len(por_cobrar(db)),
+        por_cobrar=len(por_cobrar(db, restaurante_id)),
         por_metodo={k: TotalMetodo(**v) for k, v in por_metodo.items()},
     )
 

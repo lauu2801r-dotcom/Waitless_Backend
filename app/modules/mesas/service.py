@@ -1,11 +1,13 @@
+from typing import Optional
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from app.modules.mesas.models import Mesa, EstadoMesa
 from app.modules.mesas.schemas import MesaCrear, MesaActualizar
 
-def crear_mesa(db: Session, datos: MesaCrear):
+def crear_mesa(db: Session, datos: MesaCrear, restaurante_id: Optional[int] = None):
     mesa_existente = db.query(Mesa).filter(
-        Mesa.numero == datos.numero
+        Mesa.numero == datos.numero,
+        Mesa.restaurante_id == restaurante_id,
     ).first()
     
     if mesa_existente:
@@ -17,15 +19,18 @@ def crear_mesa(db: Session, datos: MesaCrear):
     nueva_mesa = Mesa(
         numero=datos.numero,
         capacidad=datos.capacidad,
-        ubicacion=datos.ubicacion
+        ubicacion=datos.ubicacion,
+        restaurante_id=restaurante_id,
     )
     db.add(nueva_mesa)
     db.commit()
     db.refresh(nueva_mesa)
     return nueva_mesa
 
-def obtener_mesas(db: Session, solo_activas: bool = True):
+def obtener_mesas(db: Session, solo_activas: bool = True, restaurante_id: Optional[int] = None):
     query = db.query(Mesa)
+    if restaurante_id is not None:
+        query = query.filter(Mesa.restaurante_id == restaurante_id)
     if solo_activas:
         query = query.filter(Mesa.activa == True)
     return query.order_by(Mesa.numero).all()
@@ -83,8 +88,11 @@ def eliminar_mesa(db: Session, mesa_id: int):
     db.commit()
     return {"message": f"Mesa {mesa.numero} desactivada"}
 
-def obtener_mesas_disponibles(db: Session):
-    return db.query(Mesa).filter(
+def obtener_mesas_disponibles(db: Session, restaurante_id: Optional[int] = None):
+    query = db.query(Mesa).filter(
         Mesa.estado == EstadoMesa.libre,
         Mesa.activa == True
-    ).order_by(Mesa.numero).all()
+    )
+    if restaurante_id is not None:
+        query = query.filter(Mesa.restaurante_id == restaurante_id)
+    return query.order_by(Mesa.numero).all()

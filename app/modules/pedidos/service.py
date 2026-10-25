@@ -1,3 +1,4 @@
+from typing import Optional
 from sqlalchemy.orm import Session, joinedload
 from fastapi import HTTPException, status
 from app.modules.pedidos.models import Pedido, ItemPedido, EstadoPedido
@@ -19,6 +20,7 @@ def crear_pedido(db: Session, datos: PedidoCrear, usuario_id: int):
 
     total = 0.0
     items_data = []
+    restaurantes_pedido = set()
 
     for item in datos.items:
         producto = db.query(Producto).filter(
@@ -33,6 +35,7 @@ def crear_pedido(db: Session, datos: PedidoCrear, usuario_id: int):
                 detail=f"Producto {item.producto_id} no encontrado o no disponible"
             )
 
+        restaurantes_pedido.add(producto.restaurante_id)
         subtotal = producto.precio * item.cantidad
         total += subtotal
 
@@ -44,8 +47,21 @@ def crear_pedido(db: Session, datos: PedidoCrear, usuario_id: int):
             notas=item.notas
         ))
 
+    if len(restaurantes_pedido) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Un pedido solo puede tener platos de un mismo restaurante"
+        )
+    restaurante_id = next(iter(restaurantes_pedido), None)
+    if restaurante_id is not None and mesa.restaurante_id is not None and mesa.restaurante_id != restaurante_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La mesa no pertenece al restaurante de los platos elegidos"
+        )
+
     nuevo_pedido = Pedido(
         usuario_id=usuario_id,
+        restaurante_id=restaurante_id or mesa.restaurante_id,
         mesa_id=datos.mesa_id,
         reserva_id=datos.reserva_id,
         notas=datos.notas,
@@ -67,20 +83,26 @@ def obtener_pedidos_usuario(db: Session, usuario_id: int):
         Pedido.usuario_id == usuario_id
     ).order_by(Pedido.creado_en.desc()).all()
 
-def obtener_todos_pedidos(db: Session):
-    return db.query(Pedido).options(
+def obtener_todos_pedidos(db: Session, restaurante_id: Optional[int] = None):
+    q = db.query(Pedido).options(
         joinedload(Pedido.items).joinedload(ItemPedido.producto)
-    ).order_by(Pedido.creado_en.desc()).all()
+    )
+    if restaurante_id is not None:
+        q = q.filter(Pedido.restaurante_id == restaurante_id)
+    return q.order_by(Pedido.creado_en.desc()).all()
 
-def obtener_pedidos_activos(db: Session):
-    return db.query(Pedido).options(
+def obtener_pedidos_activos(db: Session, restaurante_id: Optional[int] = None):
+    q = db.query(Pedido).options(
         joinedload(Pedido.items).joinedload(ItemPedido.producto)
     ).filter(
         Pedido.estado.in_([
             EstadoPedido.pendiente,
             EstadoPedido.en_preparacion
         ])
-    ).order_by(Pedido.creado_en.asc()).all()
+    )
+    if restaurante_id is not None:
+        q = q.filter(Pedido.restaurante_id == restaurante_id)
+    return q.order_by(Pedido.creado_en.asc()).all()
 
 def obtener_pedido(db: Session, pedido_id: int):
     pedido = db.query(Pedido).options(

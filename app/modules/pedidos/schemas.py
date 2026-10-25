@@ -78,6 +78,8 @@ class PedidoRespuesta(BaseModel):
     total: float
     items: List[ItemPedidoRespuesta]
     creado_en: datetime
+    restaurante_id: Optional[int] = None
+    restaurante_nombre: Optional[str] = None
 
     # ── NUEVOS CAMPOS ──────────────────────────────────────
     tipo_entrega: TipoEntrega

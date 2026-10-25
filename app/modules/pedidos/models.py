@@ -28,6 +28,7 @@ class Pedido(Base):
     id          = Column(Integer, primary_key=True, index=True)
     usuario_id  = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
     mesa_id     = Column(Integer, ForeignKey("mesas.id"), nullable=False)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id"), nullable=True, index=True)
     reserva_id  = Column(Integer, ForeignKey("reservas.id"), nullable=True)
     estado      = Column(Enum(EstadoPedido), default=EstadoPedido.pendiente)
     notas       = Column(Text, nullable=True)
@@ -47,6 +48,11 @@ class Pedido(Base):
 
     usuario = relationship("Usuario", backref="pedidos")
     mesa    = relationship("Mesa", backref="pedidos")
+    restaurante = relationship("Restaurante", lazy="joined")
+
+    @property
+    def restaurante_nombre(self):
+        return self.restaurante.nombre if self.restaurante else None
     items   = relationship(
         "ItemPedido", backref="pedido", cascade="all, delete-orphan"
     )

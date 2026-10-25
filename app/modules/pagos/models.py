@@ -69,6 +69,10 @@ class Factura(Base):
         return self._snap().get("concepto", "")
 
     @property
+    def restaurante(self):
+        return self._snap().get("restaurante")
+
+    @property
     def cliente_email(self):
         return self._snap().get("cliente_email")
 
