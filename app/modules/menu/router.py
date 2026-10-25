@@ -1,10 +1,11 @@
 from typing import List
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import admin_o_empleado, solo_admin
+from app.modules.auditoria import service as auditoria
 from app.modules.menu import service
 from app.modules.menu.schemas import (
     ProductoActualizar,
@@ -38,10 +39,17 @@ def listar_todos(
 @router.post("/", response_model=ProductoRespuesta)
 def crear_producto(
     datos: ProductoCrear,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: dict = Depends(solo_admin),
 ):
-    return service.crear_producto(db, datos)
+    producto = service.crear_producto(db, datos)
+    auditoria.registrar(
+        db, "producto_creado", usuario_id=int(current_user["sub"]),
+        email=current_user["email"], entidad="producto", entidad_id=producto.id,
+        ip=auditoria.ip_de(request),
+    )
+    return producto
 
 
 @router.get("/{producto_id}", response_model=ProductoRespuesta)
@@ -53,16 +61,30 @@ def obtener_producto(producto_id: int, db: Session = Depends(get_db)):
 def actualizar_producto(
     producto_id: int,
     datos: ProductoActualizar,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: dict = Depends(solo_admin),
 ):
-    return service.actualizar_producto(db, producto_id, datos)
+    producto = service.actualizar_producto(db, producto_id, datos)
+    auditoria.registrar(
+        db, "producto_modificado", usuario_id=int(current_user["sub"]),
+        email=current_user["email"], entidad="producto", entidad_id=producto_id,
+        ip=auditoria.ip_de(request),
+    )
+    return producto
 
 
 @router.delete("/{producto_id}")
 def eliminar_producto(
     producto_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: dict = Depends(solo_admin),
 ):
-    return service.eliminar_producto(db, producto_id)
+    resultado = service.eliminar_producto(db, producto_id)
+    auditoria.registrar(
+        db, "producto_eliminado", usuario_id=int(current_user["sub"]),
+        email=current_user["email"], entidad="producto", entidad_id=producto_id,
+        ip=auditoria.ip_de(request),
+    )
+    return resultado
