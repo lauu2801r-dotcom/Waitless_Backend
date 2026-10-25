@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.database import Base, engine
@@ -8,8 +10,12 @@ from app.modules.reservas.router import router as reservas_router
 from app.modules.pedidos.router import router as pedidos_router
 from app.modules.reportes.router import router as reportes_router
 from app.websocket.router import router as ws_router
+from app.websocket.manager import manager
 from app.ia.router import router as ia_router    
-from app.ia import models as ia_models     
+from app.ia import models as ia_models
+from app.modules.auditoria.router import router as auditoria_router
+from app.modules.auditoria import models as auditoria_models
+from app.modules.usuarios.router import router as usuarios_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -22,7 +28,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,   # usamos Bearer token, no cookies
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -34,12 +40,16 @@ app.include_router(reservas_router, prefix="/reservas",  tags=["Reservas"])
 app.include_router(pedidos_router,  prefix="/pedidos",   tags=["Pedidos"])
 app.include_router(reportes_router, prefix="/reportes",  tags=["Reportes"])
 app.include_router(ws_router,       prefix="/ws",        tags=["WebSocket"])
-app.include_router(ia_router,       prefix="/ia",        tags=["IA"])   # ← NUEVO
+app.include_router(ia_router,       prefix="/ia",        tags=["IA"])
+app.include_router(auditoria_router, prefix="/auditoria", tags=["Auditoría"])
+app.include_router(usuarios_router,  prefix="/usuarios",  tags=["Personal y usuarios"])
 
 from app.core.seed import seed_mesas
 
 @app.on_event("startup")
 async def startup_event():
+    # Guardamos el bucle de eventos para poder emitir WebSocket desde endpoints síncronos
+    manager.set_loop(asyncio.get_running_loop())
     seed_mesas()
 
 @app.get("/")

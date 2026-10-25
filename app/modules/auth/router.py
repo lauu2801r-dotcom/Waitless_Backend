@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.modules.auth import service
+from app.modules.auditoria import service as auditoria
 from app.modules.auth.schemas import (
     UsuarioRegistro,
     UsuarioLogin,
@@ -12,17 +13,43 @@ from app.modules.auth.schemas import (
 
 router = APIRouter()
 
+def _ip(request: Request):
+    return request.client.host if request.client else None
+
+
 @router.post("/register")
-async def registrar(datos: UsuarioRegistro, db: Session = Depends(get_db)):
-    return await service.registrar_usuario(db, datos)
+async def registrar(datos: UsuarioRegistro, request: Request, db: Session = Depends(get_db)):
+    resultado = await service.registrar_usuario(db, datos)
+    auditoria.registrar(
+        db, "registro", email=datos.email.lower().strip(),
+        detalle=f"rol={datos.rol.value if datos.rol else 'cliente'}", ip=_ip(request),
+    )
+    return resultado
 
 @router.post("/verify-otp", response_model=TokenRespuesta)
-async def verificar(datos: VerificarOTP, db: Session = Depends(get_db)):
-    return await service.verificar_otp(db, datos)
+async def verificar(datos: VerificarOTP, request: Request, db: Session = Depends(get_db)):
+    resultado = await service.verificar_otp(db, datos)
+    auditoria.registrar(
+        db, "cuenta_verificada", usuario_id=resultado["usuario"]["id"],
+        email=datos.email.lower().strip(), ip=_ip(request),
+    )
+    return resultado
 
 @router.post("/login", response_model=TokenRespuesta)
-async def login(datos: UsuarioLogin, db: Session = Depends(get_db)):
-    return await service.login_usuario(db, datos)
+async def login(datos: UsuarioLogin, request: Request, db: Session = Depends(get_db)):
+    email = datos.email.lower().strip()
+    try:
+        resultado = await service.login_usuario(db, datos)
+    except HTTPException as e:
+        auditoria.registrar(
+            db, "login_fallido", email=email, detalle=str(e.detail), ip=_ip(request),
+        )
+        raise
+    auditoria.registrar(
+        db, "login_exitoso", usuario_id=resultado["usuario"]["id"],
+        email=email, ip=_ip(request),
+    )
+    return resultado
 
 @router.post("/resend-otp")
 async def reenviar(datos: ReenviarOTP, db: Session = Depends(get_db)):
