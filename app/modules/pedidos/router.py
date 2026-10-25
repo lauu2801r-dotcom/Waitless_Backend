@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import admin_o_empleado, es_personal, get_current_user
 from app.modules.auditoria import service as auditoria
+from app.modules.pagos.service import pedido_pagado
 from app.modules.pedidos import service
 from app.websocket.manager import manager
 from app.modules.pedidos.schemas import (
@@ -118,6 +119,11 @@ def editar_items(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
+    if pedido_pagado(db, pedido_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El pedido ya está pagado y no se puede modificar",
+        )
     pedido = service.editar_items_pedido(
         db, pedido_id, int(current_user["sub"]), datos
     )
@@ -140,6 +146,11 @@ def cancelar_pedido(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
+    if pedido_pagado(db, pedido_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El pedido ya está pagado y no se puede cancelar",
+        )
     resultado = service.cancelar_pedido(db, pedido_id, int(current_user["sub"]))
     evento = {"tipo": "pedido_cancelado", "pedido_id": pedido_id,
               "mensaje": f"Pedido #{pedido_id} cancelado"}

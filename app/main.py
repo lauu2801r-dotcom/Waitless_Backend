@@ -16,6 +16,14 @@ from app.ia import models as ia_models
 from app.modules.auditoria.router import router as auditoria_router
 from app.modules.auditoria import models as auditoria_models
 from app.modules.usuarios.router import router as usuarios_router
+from app.modules.inventario.router import router as inventario_router
+from app.modules.inventario import models as inventario_models
+from app.modules.compras.router import router as compras_router
+from app.modules.compras import models as compras_models
+from app.modules.pagos.router import router as pagos_router
+from app.modules.pagos import models as pagos_models
+from app.modules.clientes.router import router as clientes_router
+from app.modules.clientes import models as clientes_models
 
 Base.metadata.create_all(bind=engine)
 
@@ -43,6 +51,10 @@ app.include_router(ws_router,       prefix="/ws",        tags=["WebSocket"])
 app.include_router(ia_router,       prefix="/ia",        tags=["IA"])
 app.include_router(auditoria_router, prefix="/auditoria", tags=["Auditoría"])
 app.include_router(usuarios_router,  prefix="/usuarios",  tags=["Personal y usuarios"])
+app.include_router(inventario_router, prefix="/inventario", tags=["Inventario y proveedores"])
+app.include_router(compras_router,     prefix="/compras",    tags=["Órdenes de compra"])
+app.include_router(pagos_router,       prefix="/pagos",      tags=["Pagos y facturación"])
+app.include_router(clientes_router,    prefix="/clientes",   tags=["Perfil del cliente"])
 
 from app.core.seed import seed_mesas
 
