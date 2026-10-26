@@ -14,6 +14,13 @@ class RolAsignable(str, enum.Enum):
     empleado = "empleado"
 
 
+class CargoEmpleado(str, enum.Enum):
+    """Etiqueta del puesto. No cambia los permisos: todos los empleados tienen el rol 'empleado'."""
+    mesero = "mesero"
+    cocinero = "cocinero"
+    cajero = "cajero"
+
+
 def _validar_password(valor: str) -> str:
     if len(valor) < 8:
         raise ValueError("La contraseña debe tener mínimo 8 caracteres")
@@ -29,6 +36,7 @@ class EmpleadoCrear(BaseModel):
     apellido: str = Field(min_length=1, max_length=100)
     email: EmailStr
     telefono: Optional[str] = Field(default=None, max_length=20)
+    cargo: CargoEmpleado = CargoEmpleado.mesero
     password: str
 
     @field_validator("password")
@@ -42,6 +50,7 @@ class UsuarioActualizar(BaseModel):
     apellido: Optional[str] = Field(default=None, min_length=1, max_length=100)
     telefono: Optional[str] = Field(default=None, max_length=20)
     rol: Optional[RolAsignable] = None
+    cargo: Optional[CargoEmpleado] = None
     activo: Optional[bool] = None
 
 
@@ -54,6 +63,7 @@ class UsuarioGestionRespuesta(BaseModel):
     email: str
     telefono: Optional[str] = None
     rol: RolUsuario
+    cargo: Optional[str] = None
     verificado: bool
     activo: bool
     creado_en: Optional[datetime] = None

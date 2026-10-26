@@ -14,6 +14,13 @@ from app.modules.mesas.schemas import MesaActualizar, MesaCrear, MesaRespuesta
 router = APIRouter()
 
 
+def _mesa_propia(db: Session, mesa_id: int, current_user: dict):
+    """Un administrador o empleado solo toca mesas de SU restaurante."""
+    propio = restaurante_id_de(db, current_user)
+    if propio is not None and service.obtener_mesa(db, mesa_id).restaurante_id != propio:
+        raise HTTPException(403, "Esta mesa pertenece a otro restaurante")
+
+
 @router.post("/", response_model=MesaRespuesta)
 def crear_mesa(
     datos: MesaCrear,
@@ -71,6 +78,7 @@ def actualizar_mesa(
     db: Session = Depends(get_db),
     current_user: dict = Depends(solo_admin),
 ):
+    _mesa_propia(db, mesa_id, current_user)
     mesa = service.actualizar_mesa(db, mesa_id, datos)
     manager.emitir("mesas", {"tipo": "mesas_actualizadas", "mesa_id": mesa_id, "mensaje": f"Mesa {mesa.numero} modificada"})
     auditoria.registrar(
@@ -89,6 +97,7 @@ def cambiar_estado(
     db: Session = Depends(get_db),
     current_user: dict = Depends(admin_o_empleado),
 ):
+    _mesa_propia(db, mesa_id, current_user)
     mesa = service.actualizar_estado_mesa(db, mesa_id, estado)
     evento = {"tipo": "estado_mesa", "mesa_id": mesa_id, "numero": mesa.numero,
               "estado": estado.value, "mensaje": f"Mesa {mesa.numero} cambió a {estado.value}"}
@@ -109,6 +118,7 @@ def eliminar_mesa(
     db: Session = Depends(get_db),
     current_user: dict = Depends(solo_admin),
 ):
+    _mesa_propia(db, mesa_id, current_user)
     resultado = service.eliminar_mesa(db, mesa_id)
     manager.emitir("mesas", {"tipo": "mesas_actualizadas", "mesa_id": mesa_id, "mensaje": "Mesa eliminada"})
     auditoria.registrar(

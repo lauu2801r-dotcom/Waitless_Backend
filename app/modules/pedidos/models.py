@@ -53,6 +53,11 @@ class Pedido(Base):
     @property
     def restaurante_nombre(self):
         return self.restaurante.nombre if self.restaurante else None
+
+    @property
+    def mesa_numero(self):
+        return self.mesa.numero if self.mesa else None
+
     items   = relationship(
         "ItemPedido", backref="pedido", cascade="all, delete-orphan"
     )

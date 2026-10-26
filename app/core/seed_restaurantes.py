@@ -1,28 +1,22 @@
 """
-Prepara el sistema para varios restaurantes. Se ejecuta UNA vez (se puede repetir sin problema):
+Prepara el sistema para varios restaurantes. Se puede ejecutar varias veces sin duplicar nada:
 
     python -m app.core.seed_restaurantes
 
-Qué hace:
-  1. Agrega las columnas nuevas si faltan (restaurante en platos, mesas y pedidos).
-  2. Tu restaurante actual pasa a llamarse "Casa Solera" (cocina tradicional) y se queda
-     con todos los platos, mesas y pedidos que ya existían.
-  3. Completa el restaurante "Corona" (hamburguesas y comida rápida) con su menú y sus mesas.
+  · El restaurante "tradicional" (p. ej. Casa Solera) es el que ya tenías: conserva los platos,
+    mesas y pedidos que existían antes de manejar varios restaurantes.
+  · CORONA (hamburguesas y comida rápida) se registra desde la app como cualquier restaurante
+    (correo real + código de negocio + verificación). Este comando le carga su menú de
+    hamburguesas y sus mesas.
 
-IMPORTANTE: Corona debe registrarse ANTES desde la app, como lo haría cualquier restaurante
-(registro de administrador con nombre de restaurante "Corona", código de negocio y verificación
-por correo). Así la cuenta usa un correo real. Si todavía no está registrado, el seed lo avisa
-y solo prepara Casa Solera; después de registrarlo, vuelve a correr el comando.
+Si Corona todavía no está registrado, el seed lo avisa; después de registrarlo vuelve a correrlo.
 """
-
 from app.core.database import Base, SessionLocal, engine
 from app.core.migraciones import asegurar_columnas
-from app.modules.auth.models import Restaurante, RolUsuario, Usuario  # noqa: F401
+from app.modules.auth.models import Restaurante
 from app.modules.mesas.models import EstadoMesa, Mesa
 from app.modules.menu.models import Producto
-from app.modules.pedidos.models import Pedido
-
-NOMBRE_PRINCIPAL = "Casa Solera"
+from app.modules.pedidos.models import ItemPedido, Pedido
 
 # nombre, descripción, precio, categoría
 MENU_CORONA = [
@@ -44,8 +38,8 @@ MENU_CORONA = [
     ("Brownie con helado", "Brownie tibio con bola de helado de vainilla.", 9900, "Postres"),
 ]
 
-# número, capacidad, ubicación
-MESAS_CORONA = [
+# número, capacidad, ubicación (mesas nuevas de un restaurante que no tenga)
+MESAS = [
     (1, 2, "Terraza"), (2, 2, "Terraza"), (3, 4, "Interior"), (4, 4, "Interior"),
     (5, 4, "Interior"), (6, 6, "Salón"), (7, 6, "Salón"), (8, 2, "Barra"),
 ]
@@ -56,49 +50,54 @@ def main():
     asegurar_columnas(engine)
     db = SessionLocal()
     try:
-        # ── 1. Restaurante principal ──
-        principal = (
-            db.query(Restaurante)
-            .filter(~Restaurante.nombre.ilike("corona"))
-            .order_by(Restaurante.id)
-            .first()
+        tradicional = (
+            db.query(Restaurante).filter(~Restaurante.nombre.ilike("corona%"))
+            .order_by(Restaurante.id).first()
         )
-        if principal is None:
-            admin = db.query(Usuario).filter(Usuario.rol == RolUsuario.administrador).order_by(Usuario.id).first()
-            if admin is None:
-                print("❌ No hay ningún administrador. Regístrate primero como administrador en la app.")
-                return
-            principal = Restaurante(nombre=NOMBRE_PRINCIPAL, codigo_negocio="PRINCIPAL", administrador_id=admin.id)
-            db.add(principal)
+        corona = (
+            db.query(Restaurante).filter(Restaurante.nombre.ilike("corona%"))
+            .order_by(Restaurante.id).first()
+        )
+
+        # ── Restaurante tradicional: se queda con lo que ya existía ──
+        if tradicional is not None:
+            tradicional.descripcion = tradicional.descripcion or "Cocina tradicional y de autor, con ingredientes frescos de la región."
+            tradicional.tipo_cocina = tradicional.tipo_cocina or "Cocina tradicional"
+            tradicional.emoji = tradicional.emoji or "🍲"
+            tradicional.activo = True
             db.flush()
-        principal.nombre = NOMBRE_PRINCIPAL
-        principal.descripcion = "Cocina tradicional y de autor, con ingredientes frescos de la región."
-        principal.tipo_cocina = "Cocina tradicional"
-        principal.emoji = "🍲"
-        principal.activo = True
-        db.flush()
+            for modelo in (Producto, Mesa):
+                n = db.query(modelo).filter(modelo.restaurante_id.is_(None)).update(
+                    {modelo.restaurante_id: tradicional.id}, synchronize_session=False)
+                if n:
+                    print(f"   · {n} registros de {modelo.__tablename__} asignados a {tradicional.nombre}")
+            pendientes = db.query(Pedido).filter(Pedido.restaurante_id.is_(None)).all()
+            for p in pendientes:
+                item = db.query(ItemPedido).filter(ItemPedido.pedido_id == p.id).first()
+                prod = db.query(Producto).filter(Producto.id == item.producto_id).first() if item else None
+                p.restaurante_id = (prod.restaurante_id if prod else None) or (p.mesa.restaurante_id if p.mesa else None)
+            if pendientes:
+                print(f"   · {len(pendientes)} pedidos existentes asignados a su restaurante")
+            if db.query(Mesa).filter(Mesa.restaurante_id == tradicional.id).count() == 0:
+                for numero, cap, ubic in MESAS:
+                    db.add(Mesa(numero=numero, capacidad=cap, ubicacion=ubic, estado=EstadoMesa.libre,
+                                activa=True, restaurante_id=tradicional.id))
+                print(f"   · {len(MESAS)} mesas creadas para {tradicional.nombre}")
 
-        # Todo lo que existía antes pertenece al restaurante principal
-        for modelo in (Producto, Mesa, Pedido):
-            n = db.query(modelo).filter(modelo.restaurante_id.is_(None)).update(
-                {modelo.restaurante_id: principal.id}, synchronize_session=False
-            )
-            if n:
-                print(f"   · {n} registros de {modelo.__tablename__} asignados a {NOMBRE_PRINCIPAL}")
-
-        # ── 2. Corona ──
-        corona = db.query(Restaurante).filter(Restaurante.nombre.ilike("corona")).first()
+        # ── Corona ──
         if corona is None:
             db.commit()
-            print("⚠️  Corona todavía no está registrado.")
-            print("    Regístralo desde la app: Registrarme > Administrador > nombre del restaurante \"Corona\",")
-            print("    con un correo real y el código de negocio. Luego vuelve a correr este comando.")
-            print("✅ Casa Solera lista.")
+            print("\n⚠️  Corona todavía no está registrado.")
+            print("    Regístralo desde la app (Registrarme > Administrador): nombre del restaurante \"Corona\",")
+            print("    un correo real, el código de negocio y verifica el OTP. Luego vuelve a correr este comando.")
+            if tradicional is not None:
+                print(f"✅ {tradicional.nombre} lista.")
             return
+
         corona.nombre = "Corona"
-        corona.descripcion = "Hamburguesas artesanales, perros calientes y comida rápida."
-        corona.tipo_cocina = "Hamburguesas y comida rápida"
-        corona.emoji = "🍔"
+        corona.descripcion = corona.descripcion or "Hamburguesas artesanales, perros calientes y comida rápida."
+        corona.tipo_cocina = corona.tipo_cocina or "Hamburguesas y comida rápida"
+        corona.emoji = corona.emoji or "🍔"
         corona.activo = True
         db.flush()
 
@@ -107,15 +106,15 @@ def main():
                 db.add(Producto(nombre=nombre, descripcion=desc, precio=precio, categoria=cat,
                                 disponible=True, activo=True, restaurante_id=corona.id))
             print(f"   · {len(MENU_CORONA)} platos creados para Corona")
-
         if db.query(Mesa).filter(Mesa.restaurante_id == corona.id).count() == 0:
-            for numero, cap, ubic in MESAS_CORONA:
+            for numero, cap, ubic in MESAS:
                 db.add(Mesa(numero=numero, capacidad=cap, ubicacion=ubic, estado=EstadoMesa.libre,
                             activa=True, restaurante_id=corona.id))
-            print(f"   · {len(MESAS_CORONA)} mesas creadas para Corona")
+            print(f"   · {len(MESAS)} mesas creadas para Corona")
 
         db.commit()
-        print("✅ Restaurantes listos: Casa Solera y Corona.")
+        otro = f"{tradicional.nombre} y " if tradicional is not None else ""
+        print(f"✅ Restaurantes listos: {otro}Corona.")
     except Exception as e:  # noqa: BLE001
         db.rollback()
         print(f"❌ Error: {e}")

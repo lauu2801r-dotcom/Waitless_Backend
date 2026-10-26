@@ -19,6 +19,16 @@ from app.modules.pedidos.schemas import (
 router = APIRouter()
 
 
+def _solo_su_restaurante(db: Session, pedido, current_user: dict):
+    """Un administrador solo puede ver o cambiar pedidos de SU restaurante."""
+    rid = restaurante_id_de(db, current_user)
+    if rid is not None and pedido.restaurante_id != rid:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este pedido pertenece a otro restaurante",
+        )
+
+
 def _valor(x):
     """Devuelve el texto de un Enum (o el valor tal cual)."""
     return getattr(x, "value", x)
@@ -77,6 +87,7 @@ def obtener_pedido(
     current_user: dict = Depends(get_current_user),
 ):
     pedido = service.obtener_pedido(db, pedido_id)
+    _solo_su_restaurante(db, pedido, current_user)
     # Un cliente solo puede ver sus propios pedidos
     if not es_personal(current_user) and pedido.usuario_id != int(current_user["sub"]):
         raise HTTPException(
@@ -94,6 +105,7 @@ def actualizar_pedido(
     db: Session = Depends(get_db),
     current_user: dict = Depends(admin_o_empleado),
 ):
+    _solo_su_restaurante(db, service.obtener_pedido(db, pedido_id), current_user)
     pedido = service.actualizar_estado_pedido(db, pedido_id, datos)
     evento = {"tipo": "pedido_estado", "pedido_id": pedido_id,
               "mesa_id": pedido.mesa_id, "estado": _valor(pedido.estado),

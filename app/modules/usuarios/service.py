@@ -9,7 +9,7 @@ from app.modules.auth.models import RolUsuario, Usuario
 from app.modules.usuarios.schemas import EmpleadoCrear, UsuarioActualizar
 
 
-def crear_empleado(db: Session, datos: EmpleadoCrear) -> Usuario:
+def crear_empleado(db: Session, datos: EmpleadoCrear, restaurante_id: Optional[int]) -> Usuario:
     email = datos.email.lower().strip()
     if db.query(Usuario).filter(Usuario.email == email).first():
         raise HTTPException(
@@ -26,6 +26,8 @@ def crear_empleado(db: Session, datos: EmpleadoCrear) -> Usuario:
         telefono=datos.telefono,
         hashed_password=get_password_hash(datos.password),
         rol=RolUsuario.empleado,
+        restaurante_id=restaurante_id,
+        cargo=datos.cargo.value,
         verificado=True,
         activo=True,
     )
@@ -37,13 +39,17 @@ def crear_empleado(db: Session, datos: EmpleadoCrear) -> Usuario:
 
 def listar_usuarios(
     db: Session,
-    rol: Optional[RolUsuario] = None,
+    restaurante_id: Optional[int],
     activo: Optional[bool] = None,
     buscar: Optional[str] = None,
 ):
-    q = db.query(Usuario)
-    if rol is not None:
-        q = q.filter(Usuario.rol == rol)
+    """Personal (empleados) del restaurante del administrador."""
+    if restaurante_id is None:
+        return []
+    q = db.query(Usuario).filter(
+        Usuario.rol == RolUsuario.empleado,
+        Usuario.restaurante_id == restaurante_id,
+    )
     if activo is not None:
         q = q.filter(Usuario.activo == activo)
     if buscar:
@@ -58,9 +64,13 @@ def listar_usuarios(
     return q.order_by(Usuario.id).all()
 
 
-def obtener_usuario(db: Session, usuario_id: int) -> Usuario:
-    usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
-    if not usuario:
+def obtener_usuario(db: Session, usuario_id: int, restaurante_id: Optional[int]) -> Usuario:
+    usuario = db.query(Usuario).filter(
+        Usuario.id == usuario_id,
+        Usuario.rol == RolUsuario.empleado,
+        Usuario.restaurante_id == restaurante_id,
+    ).first()
+    if not usuario or restaurante_id is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Usuario no encontrado",
@@ -69,10 +79,11 @@ def obtener_usuario(db: Session, usuario_id: int) -> Usuario:
 
 
 def actualizar_usuario(
-    db: Session, usuario_id: int, datos: UsuarioActualizar, actor_id: int
+    db: Session, usuario_id: int, datos: UsuarioActualizar, actor_id: int,
+    restaurante_id: Optional[int],
 ) -> tuple[Usuario, list[str]]:
     """Devuelve (usuario, lista de cambios aplicados) para la auditoría."""
-    usuario = obtener_usuario(db, usuario_id)
+    usuario = obtener_usuario(db, usuario_id, restaurante_id)
 
     if usuario.rol == RolUsuario.administrador:
         raise HTTPException(
@@ -97,6 +108,13 @@ def actualizar_usuario(
             if usuario.rol != nuevo:
                 aplicados.append(f"rol: {usuario.rol.value} -> {nuevo.value}")
                 usuario.rol = nuevo
+                if nuevo != RolUsuario.empleado:
+                    usuario.restaurante_id = None  # deja de ser personal del restaurante
+        elif campo == "cargo":
+            nuevo_cargo = valor.value if hasattr(valor, "value") else valor
+            if valor is not None and usuario.cargo != nuevo_cargo:
+                aplicados.append(f"cargo: {usuario.cargo} -> {nuevo_cargo}")
+                usuario.cargo = nuevo_cargo
         elif campo == "activo":
             if usuario.activo != valor:
                 aplicados.append(f"activo: {usuario.activo} -> {valor}")

@@ -4,9 +4,8 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import solo_admin
+from app.core.deps import restaurante_id_de, solo_admin
 from app.modules.auditoria import service as auditoria
-from app.modules.auth.models import RolUsuario
 from app.modules.usuarios import service
 from app.modules.usuarios.schemas import (
     EmpleadoCrear,
@@ -24,7 +23,7 @@ def crear_empleado(
     db: Session = Depends(get_db),
     current_user: dict = Depends(solo_admin),
 ):
-    empleado = service.crear_empleado(db, datos)
+    empleado = service.crear_empleado(db, datos, restaurante_id_de(db, current_user))
     auditoria.registrar(
         db, "empleado_creado", usuario_id=int(current_user["sub"]),
         email=current_user["email"], entidad="usuario", entidad_id=empleado.id,
@@ -35,13 +34,13 @@ def crear_empleado(
 
 @router.get("/", response_model=List[UsuarioGestionRespuesta])
 def listar_usuarios(
-    rol: Optional[RolUsuario] = None,
     activo: Optional[bool] = None,
     buscar: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: dict = Depends(solo_admin),
 ):
-    return service.listar_usuarios(db, rol, activo, buscar)
+    """Personal del restaurante del administrador (solo sus empleados)."""
+    return service.listar_usuarios(db, restaurante_id_de(db, current_user), activo, buscar)
 
 
 @router.get("/{usuario_id}", response_model=UsuarioGestionRespuesta)
@@ -50,7 +49,7 @@ def obtener_usuario(
     db: Session = Depends(get_db),
     current_user: dict = Depends(solo_admin),
 ):
-    return service.obtener_usuario(db, usuario_id)
+    return service.obtener_usuario(db, usuario_id, restaurante_id_de(db, current_user))
 
 
 @router.patch("/{usuario_id}", response_model=UsuarioGestionRespuesta)
@@ -62,7 +61,8 @@ def actualizar_usuario(
     current_user: dict = Depends(solo_admin),
 ):
     usuario, cambios = service.actualizar_usuario(
-        db, usuario_id, datos, int(current_user["sub"])
+        db, usuario_id, datos, int(current_user["sub"]),
+        restaurante_id_de(db, current_user),
     )
     if cambios:
         auditoria.registrar(

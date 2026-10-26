@@ -32,8 +32,22 @@ class Usuario(Base):
     creado_en        = Column(DateTime, server_default=func.now())
     actualizado_en   = Column(DateTime, onupdate=func.now())
 
+    # Solo para empleados: restaurante donde trabajan (los administradores usan Restaurante.administrador_id)
+    restaurante_id   = Column(
+        Integer,
+        ForeignKey("restaurantes.id", use_alter=True, name="fk_usuario_restaurante"),
+        nullable=True,
+        index=True,
+    )
+
+    # Solo empleados: cargo (mesero, cocinero, cajero). Es una etiqueta, los permisos son los del rol.
+    cargo            = Column(String(30), nullable=True)
+
     # Relación: un admin puede tener un restaurante
-    restaurante = relationship("Restaurante", back_populates="administrador", uselist=False)
+    restaurante = relationship(
+        "Restaurante", back_populates="administrador", uselist=False,
+        foreign_keys="Restaurante.administrador_id",
+    )
 
 
 class Restaurante(Base):
@@ -51,4 +65,6 @@ class Restaurante(Base):
     actualizado_en    = Column(DateTime, onupdate=func.now())
 
     # Relación inversa
-    administrador = relationship("Usuario", back_populates="restaurante")
+    administrador = relationship(
+        "Usuario", back_populates="restaurante", foreign_keys=[administrador_id]
+    )

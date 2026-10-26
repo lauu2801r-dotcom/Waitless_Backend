@@ -21,6 +21,8 @@ COLUMNAS_NUEVAS = [
     ("productos", "restaurante_id", "INTEGER REFERENCES restaurantes(id)"),
     ("mesas", "restaurante_id", "INTEGER REFERENCES restaurantes(id)"),
     ("pedidos", "restaurante_id", "INTEGER REFERENCES restaurantes(id)"),
+    ("usuarios", "restaurante_id", "INTEGER REFERENCES restaurantes(id)"),
+    ("usuarios", "cargo", "VARCHAR(30)"),
 ]
 
 

@@ -80,6 +80,7 @@ class PedidoRespuesta(BaseModel):
     creado_en: datetime
     restaurante_id: Optional[int] = None
     restaurante_nombre: Optional[str] = None
+    mesa_numero: Optional[int] = None
 
     # ── NUEVOS CAMPOS ──────────────────────────────────────
     tipo_entrega: TipoEntrega

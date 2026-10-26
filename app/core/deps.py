@@ -95,9 +95,19 @@ def es_personal(current_user: dict) -> bool:
 
 def restaurante_id_de(db: Session, current_user: dict) -> Optional[int]:
     """
-    Id del restaurante que administra el usuario (solo aplica a administradores).
-    Para clientes y empleados devuelve None (no quedan limitados a un restaurante).
+    Id del restaurante al que pertenece el usuario:
+      · administrador → el restaurante que administra
+      · empleado      → el restaurante donde lo registró su administrador
+                        (None en empleados antiguos sin restaurante: ven todo, como antes)
+      · cliente       → None (elige restaurante al pedir)
     """
+    if current_user["rol"] == RolUsuario.empleado.value:
+        from app.modules.auth.models import Usuario
+
+        fila = db.query(Usuario.restaurante_id).filter(
+            Usuario.id == int(current_user["sub"])
+        ).first()
+        return fila[0] if fila else None
     if current_user["rol"] != RolUsuario.administrador.value:
         return None
     from app.modules.auth.models import Restaurante
