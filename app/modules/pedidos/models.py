@@ -41,6 +41,11 @@ class Pedido(Base):
         nullable=False,
     )
     direccion_domicilio = Column(String(300), nullable=True)
+
+    # ── IA: tiempo estimado al crear y momento real en que quedó listo ──
+    listo_en            = Column(DateTime, nullable=True)
+    minutos_estimados   = Column(Integer, nullable=True)
+    prediccion_id       = Column(Integer, nullable=True)
     # ───────────────────────────────────────────────────────
 
     creado_en       = Column(DateTime, server_default=func.now())

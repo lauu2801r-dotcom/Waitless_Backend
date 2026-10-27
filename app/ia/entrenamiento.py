@@ -1,245 +1,254 @@
 """
-WaitLess — Módulo de Entrenamiento del Modelo de IA
-====================================================
-Entrena un modelo de Random Forest para predecir el tiempo de espera
-basándose en los datos históricos de pedidos almacenados en la BD.
+WaitLess — Entrenamiento del modelo de IA (v2)
+===============================================
+Modelo: Random Forest que predice los MINUTOS que tarda la cocina en dejar listo
+un pedido (desde que se crea hasta que pasa a "listo").
 
-Features usadas para el modelo:
-  - hora_del_dia      : hora en que llega el pedido (0-23)
-  - dia_semana        : día de la semana (0=lunes … 6=domingo)
-  - mesas_ocupadas    : cuántas mesas estaban ocupadas en ese momento
-  - total_items       : cantidad total de ítems en el pedido
-  - total_pedido      : valor monetario del pedido
+Variables (todas se conocen en el momento de crear el pedido):
+  hora_del_dia          hora LOCAL de Colombia (0-23)
+  dia_semana            0=lunes … 6=domingo
+  carga_del_restaurante pedidos que la cocina del restaurante tenía en curso en ese momento
+  total_items           cantidad de platos del pedido
+  total_pedido          valor del pedido
 
-Target (lo que predice):
-  - tiempo_espera     : minutos desde que el pedido fue creado
-                        hasta que pasó a estado "listo" o "entregado"
+Objetivo (y): minutos entre creado_en y listo_en (si el pedido es antiguo y no tiene
+listo_en se usa actualizado_en). Se descartan tiempos < 1 min o > 3 horas.
+
+Cada entrenamiento crea una VERSIÓN nueva en `modelos_ia` con sus métricas
+(MAE, R², y el error de un modelo "tonto" que siempre predice el promedio, para
+comparar). El modelo activo es el que se usa para predecir.
 """
-
-import os
-import pickle
+import json
 import logging
-from datetime import datetime
-from typing import Optional
+import pickle
+import threading
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional, Tuple
 
 import numpy as np
-from sqlalchemy.orm import Session
-from sqlalchemy import func
-
-from app.modules.pedidos.models import Pedido, ItemPedido, EstadoPedido
-from app.modules.mesas.models import Mesa, EstadoMesa
-
-# ── Scikit-learn ──────────────────────────────────────────────
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_absolute_error, r2_score
+from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sqlalchemy.orm import Session
+
+from app.ia import registro
+from app.ia.models import ModeloIA
+from app.modules.pedidos.models import EstadoPedido, Pedido
 
 logger = logging.getLogger(__name__)
 
-# Ruta donde se guarda el modelo entrenado
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "modelo_waitless.pkl")
+VARIABLES = ["hora_del_dia", "dia_semana", "carga_del_restaurante", "total_items", "total_pedido"]
+MIN_MUESTRAS_REALES = 30          # con menos se completa con datos de arranque
+AUTO_REENTRENAR_CADA = 25         # pedidos reales nuevos para reentrenar solo
+TOLERANCIA_AUTO = 1.05            # un modelo automático solo se activa si no empeora más de 5 %
+UTC_MENOS_5 = timedelta(hours=-5)  # Colombia no tiene horario de verano
 
-# Mínimo de muestras para entrenar (si hay menos, usamos datos sintéticos de apoyo)
-MIN_MUESTRAS = 20
+_entrenando = threading.Lock()
 
 
-# ─────────────────────────────────────────────────────────────
-#  EXTRACCIÓN DE DATOS
-# ─────────────────────────────────────────────────────────────
+def hora_local(dt_utc: datetime) -> datetime:
+    """El servidor guarda las fechas en UTC; el modelo aprende con la hora de Colombia."""
+    return dt_utc + UTC_MENOS_5
 
-def _extraer_dataset(db: Session) -> tuple[list[list], list[float]]:
+
+def _utc_ahora() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+# ─────────────────────────── Extracción de datos ───────────────────────────
+def _fin_de(p: Pedido) -> Optional[datetime]:
+    return p.listo_en or (p.actualizado_en if p.estado in (EstadoPedido.listo, EstadoPedido.entregado) else None)
+
+
+def _cargas(inicios: np.ndarray, fines: np.ndarray) -> np.ndarray:
     """
-    Consulta los pedidos completados (entregados/listos) y construye
-    la matriz de features X y el vector de tiempos de espera y.
-
-    Retorna (X, y) donde cada fila de X corresponde a un pedido y
-    y[i] es el tiempo en minutos que tardó ese pedido.
+    Para cada pedido: cuántos OTROS pedidos del mismo restaurante estaban en cocina
+    cuando él se creó (creados antes y todavía sin terminar).
     """
-    # Solo pedidos que ya terminaron (tenemos tiempo real)
-    pedidos_completados = (
+    n = len(inicios)
+    salida = np.zeros(n, dtype=int)
+    paso = 500
+    for a in range(0, n, paso):
+        b = min(n, a + paso)
+        i = inicios[a:b, None]
+        activo = (inicios[None, :] <= i) & (fines[None, :] > i)
+        salida[a:b] = activo.sum(axis=1) - 1  # se descuenta el propio pedido
+    return np.maximum(salida, 0)
+
+
+def extraer_dataset(db: Session) -> Tuple[List[list], List[float]]:
+    pedidos = (
         db.query(Pedido)
-        .filter(
-            Pedido.estado.in_([EstadoPedido.entregado, EstadoPedido.listo]),
-            Pedido.actualizado_en.isnot(None),
-        )
+        .filter(Pedido.estado != EstadoPedido.cancelado, Pedido.creado_en.isnot(None))
         .all()
     )
+    ahora = _utc_ahora()
+    por_rest: dict = {}
+    for p in pedidos:
+        por_rest.setdefault(p.restaurante_id, []).append(p)
 
-    X: list[list] = []
-    y: list[float] = []
-
-    for pedido in pedidos_completados:
-        # Tiempo de espera real en minutos
-        tiempo_espera = (
-            pedido.actualizado_en - pedido.creado_en
-        ).total_seconds() / 60.0
-
-        # Filtrar valores absurdos (< 1 min o > 3 horas)
-        if not (1 <= tiempo_espera <= 180):
-            continue
-
-        # Features del pedido
-        hora = pedido.creado_en.hour
-        dia_semana = pedido.creado_en.weekday()
-        total_items = sum(item.cantidad for item in pedido.items)
-
-        # Mesas ocupadas en la hora de creación del pedido
-        # (aproximación: contamos pedidos activos en ese instante)
-        mesas_ocupadas = (
-            db.query(func.count(Pedido.id))
-            .filter(
-                Pedido.creado_en <= pedido.creado_en,
-                Pedido.actualizado_en >= pedido.creado_en,
-                Pedido.estado != EstadoPedido.cancelado,
-            )
-            .scalar()
-            or 0
-        )
-
-        X.append([hora, dia_semana, mesas_ocupadas, total_items, pedido.total])
-        y.append(round(tiempo_espera, 2))
-
+    X: List[list] = []
+    y: List[float] = []
+    for lista in por_rest.values():
+        lista.sort(key=lambda p: p.creado_en)
+        t0 = lista[0].creado_en
+        seg = lambda d: (d - t0).total_seconds()  # noqa: E731
+        inicios = np.array([seg(p.creado_en) for p in lista])
+        fines = np.array([seg(_fin_de(p) or ahora) for p in lista])
+        cargas = _cargas(inicios, fines)
+        for p, carga in zip(lista, cargas):
+            fin = _fin_de(p)
+            if fin is None:
+                continue
+            minutos = (fin - p.creado_en).total_seconds() / 60.0
+            if not (1 <= minutos <= 180):
+                continue
+            local = hora_local(p.creado_en)
+            items = sum(it.cantidad for it in p.items)
+            X.append([local.hour, local.weekday(), int(carga), items, float(p.total or 0)])
+            y.append(round(minutos, 2))
     return X, y
 
 
-def _datos_sinteticos(n: int = 200) -> tuple[list[list], list[float]]:
-    """
-    Genera datos sintéticos realistas para el arranque del sistema
-    cuando todavía hay pocas muestras reales.
-
-    Lógica de negocio embebida:
-      - Horas pico (12-14h, 19-21h) → más demora
-      - Fines de semana → más concurrencia
-      - Más ítems → más tiempo
-    """
+def datos_de_arranque(n: int = 300) -> Tuple[List[list], List[float]]:
+    """Datos simulados con lógica de cocina, SOLO para arrancar cuando hay pocos pedidos reales."""
     rng = np.random.default_rng(seed=42)
-    X: list[list] = []
-    y: list[float] = []
-
+    X, y = [], []
     for _ in range(n):
         hora = int(rng.integers(10, 23))
         dia = int(rng.integers(0, 7))
-        mesas = int(rng.integers(0, 15))
+        carga = int(rng.integers(0, 15))
         items = int(rng.integers(1, 10))
         total = round(float(rng.uniform(15_000, 120_000)), 2)
-
-        # Base: 8 minutos
-        tiempo = 8.0
-        # Hora pico almuerzo / cena
+        t = 8.0
         if 12 <= hora <= 14 or 19 <= hora <= 21:
-            tiempo += rng.uniform(4, 10)
-        # Fin de semana
+            t += rng.uniform(4, 10)
         if dia >= 5:
-            tiempo += rng.uniform(2, 6)
-        # Concurrencia
-        tiempo += mesas * 0.4
-        # Ítems
-        tiempo += items * 1.2
-        # Ruido
-        tiempo += rng.normal(0, 1.5)
-        tiempo = max(3.0, min(tiempo, 60.0))
-
-        X.append([hora, dia, mesas, items, total])
-        y.append(round(tiempo, 2))
-
+            t += rng.uniform(2, 6)
+        t += carga * 0.4 + items * 1.2 + rng.normal(0, 1.5)
+        X.append([hora, dia, carga, items, total])
+        y.append(round(max(3.0, min(t, 60.0)), 2))
     return X, y
 
 
-# ─────────────────────────────────────────────────────────────
-#  ENTRENAMIENTO
-# ─────────────────────────────────────────────────────────────
-
-def entrenar_modelo(db: Session) -> dict:
+# ───────────────────────────── Entrenamiento ─────────────────────────────
+def entrenar_modelo(db: Session, motivo: str = "manual") -> dict:
     """
-    Entrena (o re-entrena) el modelo de predicción y lo guarda en disco.
-
-    Retorna un dict con métricas del entrenamiento:
-      {
-        "muestras_reales": int,
-        "muestras_sinteticas": int,
-        "total_muestras": int,
-        "mae_minutos": float,     # Error absoluto medio en minutos
-        "r2_score": float,        # Qué tan bien explica la varianza (0-1)
-        "modelo_guardado": bool,
-      }
+    Entrena una versión nueva. `motivo`: manual | automatico | arranque.
+    Las versiones manuales y de arranque quedan activas; las automáticas solo si
+    no empeoran el error de la versión activa.
     """
-    logger.info("🧠 Iniciando entrenamiento del modelo WaitLess…")
+    with _entrenando:
+        X_real, y_real = extraer_dataset(db)
+        n_real = len(X_real)
+        n_sint = 0
+        X_all, y_all = list(X_real), list(y_real)
+        pesos = [3.0] * n_real  # los pedidos reales pesan más que los de arranque
 
-    X_real, y_real = _extraer_dataset(db)
-    muestras_reales = len(X_real)
-    muestras_sinteticas = 0
+        if n_real < MIN_MUESTRAS_REALES:
+            Xs, ys = datos_de_arranque()
+            n_sint = len(Xs)
+            X_all += Xs
+            y_all += ys
+            pesos += [1.0] * n_sint
 
-    # Si hay pocas muestras reales, complementamos con sintéticas
-    if muestras_reales < MIN_MUESTRAS:
-        logger.warning(
-            f"Solo {muestras_reales} muestras reales. "
-            f"Complementando con datos sintéticos de arranque."
+        X = np.array(X_all, dtype=float)
+        y = np.array(y_all, dtype=float)
+        w = np.array(pesos, dtype=float)
+
+        if len(X) >= 40:
+            Xtr, Xte, ytr, yte, wtr, _ = train_test_split(X, y, w, test_size=0.2, random_state=42)
+        else:
+            Xtr, Xte, ytr, yte, wtr = X, X, y, y, w
+
+        pipe = Pipeline([
+            ("scaler", StandardScaler()),
+            ("rf", RandomForestRegressor(
+                n_estimators=100, max_depth=8, min_samples_leaf=3, random_state=42, n_jobs=-1)),
+        ])
+        pipe.fit(Xtr, ytr, rf__sample_weight=wtr)
+
+        pred = pipe.predict(Xte)
+        mae = round(float(mean_absolute_error(yte, pred)), 2)
+        r2 = round(float(r2_score(yte, pred)), 4)
+        mae_base = round(float(mean_absolute_error(yte, np.full_like(yte, ytr.mean()))), 2)
+
+        previa = (
+            db.query(ModeloIA).filter(ModeloIA.activo.is_(True))
+            .order_by(ModeloIA.version.desc()).first()
         )
-        X_sint, y_sint = _datos_sinteticos(n=max(200, MIN_MUESTRAS * 5))
-        muestras_sinteticas = len(X_sint)
-        X_all = X_real + X_sint
-        y_all = y_real + y_sint
-    else:
-        X_all = X_real
-        y_all = y_real
+        ultima = db.query(ModeloIA).order_by(ModeloIA.version.desc()).first()
+        version = (ultima.version if ultima else 0) + 1
 
-    X_arr = np.array(X_all)
-    y_arr = np.array(y_all)
+        if motivo == "automatico" and previa is not None and previa.mae is not None:
+            activar = mae <= previa.mae * TOLERANCIA_AUTO
+        else:
+            activar = True
 
-    # Split entrenamiento / validación
-    if len(X_arr) >= 40:
-        X_train, X_test, y_train, y_test = train_test_split(
-            X_arr, y_arr, test_size=0.2, random_state=42
+        fila = ModeloIA(
+            version=version, motivo=motivo, variables=json.dumps(VARIABLES),
+            muestras_reales=n_real, muestras_sinteticas=n_sint, total_muestras=len(X),
+            mae=mae, r2=r2, mae_baseline=mae_base, activo=False,
+            archivo=pickle.dumps(pipe), entrenado_en=_utc_ahora(),
         )
-    else:
-        # Con pocas muestras, entrenamos con todo
-        X_train, X_test, y_train, y_test = X_arr, X_arr, y_arr, y_arr
+        db.add(fila)
+        db.flush()
+        if activar:
+            db.query(ModeloIA).filter(ModeloIA.id != fila.id).update({ModeloIA.activo: False})
+            fila.activo = True
+        db.commit()
+        registro.invalidar()
 
-    # Pipeline: escalado + Random Forest
-    pipeline = Pipeline([
-        ("scaler", StandardScaler()),
-        ("rf", RandomForestRegressor(
-            n_estimators=100,
-            max_depth=8,
-            min_samples_leaf=3,
-            random_state=42,
-            n_jobs=-1,
-        )),
-    ])
-
-    pipeline.fit(X_train, y_train)
-
-    # Métricas en el set de validación
-    y_pred = pipeline.predict(X_test)
-    mae = round(float(mean_absolute_error(y_test, y_pred)), 2)
-    r2 = round(float(r2_score(y_test, y_pred)), 4)
-
-    # Guardar modelo en disco
-    modelo_guardado = False
-    try:
-        with open(MODEL_PATH, "wb") as f:
-            pickle.dump(pipeline, f)
-        modelo_guardado = True
-        logger.info(f"✅ Modelo guardado en {MODEL_PATH}")
-    except Exception as e:
-        logger.error(f"❌ No se pudo guardar el modelo: {e}")
-
-    resultado = {
-        "muestras_reales": muestras_reales,
-        "muestras_sinteticas": muestras_sinteticas,
-        "total_muestras": len(X_all),
-        "mae_minutos": mae,
-        "r2_score": r2,
-        "modelo_guardado": modelo_guardado,
-        "entrenado_en": datetime.now().isoformat(),
-    }
-
-    logger.info(f"📊 Métricas → MAE: {mae} min | R²: {r2}")
-    return resultado
+        logger.info("Modelo v%s entrenado: MAE=%s R2=%s activo=%s", version, mae, r2, activar)
+        return {
+            "version": version,
+            "activo": activar,
+            "motivo": motivo,
+            "muestras_reales": n_real,
+            "muestras_sinteticas": n_sint,
+            "total_muestras": len(X),
+            "mae_minutos": mae,
+            "mae_baseline_minutos": mae_base,
+            "r2_score": r2,
+            "variables": VARIABLES,
+            "entrenado_en": fila.entrenado_en.isoformat(),
+            "mensaje": (
+                "Versión activada." if activar else
+                "La versión nueva empeora el error de la activa, por eso quedó guardada pero sin activar."
+            ),
+        }
 
 
-def modelo_existe() -> bool:
-    """Verifica si ya existe un modelo entrenado en disco."""
-    return os.path.exists(MODEL_PATH)
+def activar_version(db: Session, version_id: int) -> Optional[ModeloIA]:
+    fila = db.query(ModeloIA).filter(ModeloIA.id == version_id).first()
+    if not fila or fila.archivo is None:
+        return None
+    db.query(ModeloIA).filter(ModeloIA.id != fila.id).update({ModeloIA.activo: False})
+    fila.activo = True
+    db.commit()
+    registro.invalidar()
+    return fila
+
+
+def reentrenar_en_segundo_plano() -> None:
+    """Lanza un entrenamiento automático sin hacer esperar la petición que lo disparó."""
+    from app.core.database import SessionLocal
+
+    def _tarea():
+        if _entrenando.locked():
+            return
+        s = SessionLocal()
+        try:
+            entrenar_modelo(s, motivo="automatico")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Reentrenamiento automático falló: %s", e)
+        finally:
+            s.close()
+
+    threading.Thread(target=_tarea, daemon=True).start()
+
+
+def modelo_existe(db: Optional[Session] = None) -> bool:
+    return registro.hay_modelo(db)

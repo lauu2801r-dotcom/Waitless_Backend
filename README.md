@@ -30,13 +30,16 @@ WaitLess es el backend de una aplicación móvil para restaurantes con dos roles
 
 ## Módulo de Inteligencia Artificial
 
-El módulo `ia/` implementa un modelo de **Random Forest** entrenado con datos históricos del restaurante para predecir niveles de afluencia.
+El módulo `ia/` predice cuántos minutos tardará la cocina en dejar listo un pedido (Random Forest de scikit-learn) y mide qué tan bien lo hace con los pedidos reales.
 
-- `entrenamiento.py` — entrenamiento y guardado del modelo
-- `prediccion.py` — inferencia en tiempo real desde la API
-- `metricas.py` — evaluación del modelo (accuracy, F1, matriz de confusión)
-- `modelo_waitless.pkl` — modelo serializado listo para producción
-- `router.py` — endpoints REST del módulo de IA
+**Ciclo cerrado:** al crear un pedido la IA estima el tiempo y lo guarda (`pedidos.minutos_estimados` + tabla `predicciones`); cuando el pedido pasa a *listo* se guarda el momento real (`pedidos.listo_en`) y se compara con la estimación. Con esas parejas se calculan las métricas.
+
+- `entrenamiento.py` — extrae el dataset (hora local de Colombia, carga del restaurante, ítems, total), entrena y guarda cada **versión** en `modelos_ia`; reentrena solo cada 25 pedidos reales nuevos
+- `prediccion.py` — predicción con rango y nivel de confianza (opinión de los 100 árboles) y respaldo por reglas de negocio si el modelo falla; curva de afluencia con historial real del restaurante
+- `metricas.py` — MAE, precisión ±5 min, acierto por rango, por categoría de carga, comparación entre versiones y alertas por umbral
+- `servicio.py` — estimar al crear / cerrar al quedar listo / disparar el reentrenamiento
+- `registro.py` — modelo activo en memoria; si no existe ninguna versión entrena la de arranque
+- `router.py` — `/ia/estado`, `/ia/predecir`, `/ia/afluencia`, `/ia/metricas`, `/ia/versiones`, `/ia/entrenar`, `/ia/versiones/{id}/activar`, `/ia/historial`, `/ia/exportar` (CSV)
 
 ---
 

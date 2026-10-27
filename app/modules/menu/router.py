@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.deps import admin_o_empleado, restaurante_id_de, solo_admin
 from app.modules.auditoria import service as auditoria
 from app.modules.menu import service
+from app.modules.calificaciones.service import adjuntar_a_productos
 from app.modules.menu.schemas import (
     ProductoActualizar,
     ProductoCrear,
@@ -22,12 +23,16 @@ router = APIRouter()
 @router.get("/", response_model=List[ProductoRespuesta])
 def listar_menu(restaurante_id: Optional[int] = None, db: Session = Depends(get_db)):
     """Menú público. Con ?restaurante_id=N devuelve solo el menú de ese restaurante."""
-    return service.obtener_menu(db, restaurante_id=restaurante_id)
+    productos = service.obtener_menu(db, restaurante_id=restaurante_id)
+    adjuntar_a_productos(db, productos)
+    return productos
 
 
 @router.get("/categoria/{categoria}", response_model=List[ProductoRespuesta])
 def por_categoria(categoria: str, db: Session = Depends(get_db)):
-    return service.obtener_por_categoria(db, categoria)
+    productos = service.obtener_por_categoria(db, categoria)
+    adjuntar_a_productos(db, productos)
+    return productos
 
 
 # ── Gestión (personal del restaurante) ───────────────────────────────
@@ -39,7 +44,9 @@ def listar_todos(
 ):
     # Un administrador solo ve (y gestiona) el menú de su propio restaurante
     propio = restaurante_id_de(db, current_user)
-    return service.obtener_menu(db, solo_disponibles=False, restaurante_id=propio or restaurante_id)
+    productos = service.obtener_menu(db, solo_disponibles=False, restaurante_id=propio or restaurante_id)
+    adjuntar_a_productos(db, productos)
+    return productos
 
 
 @router.post("/", response_model=ProductoRespuesta)

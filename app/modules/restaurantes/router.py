@@ -9,6 +9,7 @@ from app.modules.auditoria import service as auditoria
 from app.modules.auth.models import Restaurante
 from app.modules.mesas.models import EstadoMesa, Mesa
 from app.modules.menu.models import Producto
+from app.modules.calificaciones.service import promedio_restaurante
 from app.modules.restaurantes.schemas import RestauranteActualizar, RestauranteRespuesta
 
 router = APIRouter()
@@ -25,7 +26,9 @@ def _armar(db: Session, r: Restaurante) -> RestauranteRespuesta:
         .filter(Mesa.restaurante_id == r.id, Mesa.activa.is_(True), Mesa.estado == EstadoMesa.libre)
         .count()
     )
+    prom, n_cal = promedio_restaurante(db, r.id)
     return RestauranteRespuesta(
+        calificacion_promedio=prom, total_calificaciones=n_cal,
         id=r.id, nombre=r.nombre, descripcion=r.descripcion, tipo_cocina=r.tipo_cocina,
         emoji=r.emoji, activo=bool(r.activo), total_platos=len(productos), mesas_libres=libres,
         categorias=sorted({p.categoria for p in productos if p.categoria}),

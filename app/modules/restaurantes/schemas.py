@@ -13,6 +13,8 @@ class RestauranteRespuesta(BaseModel):
     total_platos: int = 0
     mesas_libres: int = 0
     categorias: List[str] = []
+    calificacion_promedio: Optional[float] = None
+    total_calificaciones: int = 0
 
 
 class RestauranteActualizar(BaseModel):

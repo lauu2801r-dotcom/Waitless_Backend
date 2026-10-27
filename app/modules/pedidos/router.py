@@ -9,6 +9,7 @@ from app.modules.auditoria import service as auditoria
 from app.modules.pagos.service import pedido_pagado
 from app.modules.pedidos import service
 from app.modules.notificaciones import service as notificaciones
+from app.ia import servicio as ia_servicio
 from app.websocket.manager import manager
 from app.modules.pedidos.schemas import (
     PedidoActualizar,
@@ -43,6 +44,7 @@ def crear_pedido(
     current_user: dict = Depends(get_current_user),
 ):
     pedido = service.crear_pedido(db, datos, int(current_user["sub"]))
+    ia_servicio.estimar_al_crear(db, pedido)  # la IA estima cuánto tardará (se guarda en el pedido)
     evento = {"tipo": "pedido_nuevo", "pedido_id": pedido.id,
               "mesa_id": pedido.mesa_id, "estado": _valor(pedido.estado),
               "mensaje": f"Nuevo pedido #{pedido.id}"}
@@ -109,6 +111,7 @@ def actualizar_pedido(
 ):
     _solo_su_restaurante(db, service.obtener_pedido(db, pedido_id), current_user)
     pedido = service.actualizar_estado_pedido(db, pedido_id, datos)
+    ia_servicio.cerrar_al_quedar_listo(db, pedido)  # compara el tiempo estimado con el real
     evento = {"tipo": "pedido_estado", "pedido_id": pedido_id,
               "mesa_id": pedido.mesa_id, "estado": _valor(pedido.estado),
               "mensaje": f"Pedido #{pedido_id}: {_valor(pedido.estado)}"}

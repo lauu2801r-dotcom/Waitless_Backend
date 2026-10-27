@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy.orm import Session, joinedload
 from fastapi import HTTPException, status
@@ -128,6 +129,10 @@ def actualizar_estado_pedido(db: Session, pedido_id: int, datos: PedidoActualiza
 
     for campo, valor in datos.model_dump(exclude_unset=True).items():
         setattr(pedido, campo, valor)
+
+    # Momento real en que la cocina terminó (alimenta y evalúa la IA)
+    if datos.estado in (EstadoPedido.listo, EstadoPedido.entregado) and pedido.listo_en is None:
+        pedido.listo_en = datetime.now(timezone.utc).replace(tzinfo=None)
 
     if datos.estado == EstadoPedido.entregado:
         mesa = db.query(Mesa).filter(Mesa.id == pedido.mesa_id).first()

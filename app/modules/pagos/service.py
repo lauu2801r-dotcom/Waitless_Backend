@@ -176,7 +176,13 @@ def obtener_factura(db: Session, factura_id: int) -> Factura:
 
 
 def pagos_de_pedido(db: Session, pedido_id: int) -> List[Pago]:
-    return db.query(Pago).filter(Pago.pedido_id == pedido_id).order_by(Pago.id.desc()).all()
+    pagos = db.query(Pago).filter(Pago.pedido_id == pedido_id).order_by(Pago.id.desc()).all()
+    # Se adjunta la factura de cada pago aprobado (así la app sabe que ya está pagado)
+    ids = [p.factura_id for p in pagos if p.factura_id]
+    facturas = {f.id: f for f in db.query(Factura).filter(Factura.id.in_(ids)).all()} if ids else {}
+    for p in pagos:
+        p.factura = facturas.get(p.factura_id)
+    return pagos
 
 
 def anular_factura(db: Session, factura_id: int, motivo: str, email: str) -> Factura:

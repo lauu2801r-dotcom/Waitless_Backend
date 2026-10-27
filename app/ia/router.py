@@ -1,34 +1,48 @@
 """
-WaitLess — Router del Módulo de IA
-====================================
-  POST /ia/entrenar     → Re-entrena el modelo           (solo administrador)
-  GET  /ia/predecir     → Predice tiempo de espera       (usuario autenticado)
-  GET  /ia/afluencia    → Curva de ocupación por hora    (usuario autenticado)
-  GET  /ia/metricas     → Métricas de precisión          (solo administrador)
-  GET  /ia/estado       → Estado del modelo              (público)
+WaitLess — Router del módulo de IA
+===================================
+  GET  /ia/estado                 Estado del modelo activo               (público)
+  GET  /ia/predecir               Predice el tiempo de espera            (autenticado)
+  GET  /ia/afluencia              Curva de afluencia por hora            (autenticado)
+  GET  /ia/metricas               Métricas reales + alertas (filtros)    (administrador)
+  GET  /ia/versiones              Versiones del modelo y su rendimiento  (administrador)
+  POST /ia/entrenar               Entrena una versión nueva              (administrador)
+  POST /ia/versiones/{id}/activar Activa una versión anterior            (administrador)
+  GET  /ia/historial              Últimas predicciones                   (administrador)
+  GET  /ia/exportar               Predicciones/métricas en CSV           (administrador)
 """
-from fastapi import APIRouter, Depends, Query
+import csv
+import io
+from datetime import datetime
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, solo_admin
-from app.ia.entrenamiento import entrenar_modelo, modelo_existe
-from app.ia.metricas import calcular_metricas_modelo
+from app.core.deps import get_current_user, restaurante_id_de, solo_admin
+from app.ia.entrenamiento import activar_version, entrenar_modelo, modelo_existe
+from app.ia.metricas import (
+    UMBRAL_MAE_MIN, UMBRAL_PRECISION_MIN, calcular_metricas_modelo,
+    filas_para_exportar, listar_versiones,
+)
 from app.ia.prediccion import (
-    info_modelo,
-    predecir_afluencia_hora,
-    predecir_tiempo_espera,
+    info_modelo, obtener_historial, predecir_afluencia_hora, predecir_tiempo_espera,
 )
 
 router = APIRouter()
 
 
+@router.get("/estado")
+def estado(db: Session = Depends(get_db)):
+    return {**info_modelo(db), "modelo_existe": modelo_existe(db)}
+
+
 @router.post("/entrenar")
-def entrenar(
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(solo_admin),
-):
-    return entrenar_modelo(db)
+def entrenar(db: Session = Depends(get_db), current_user: dict = Depends(solo_admin)):
+    """Entrena una versión nueva con los pedidos reales (y datos de arranque si faltan)."""
+    return entrenar_modelo(db, motivo="manual")
 
 
 @router.get("/predecir")
@@ -38,43 +52,95 @@ def predecir(
     mesas_ocupadas: int = Query(..., ge=0),
     total_items: int = Query(..., ge=1),
     total_pedido: float = Query(..., gt=0),
+    restaurante_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    if not modelo_existe():
-        entrenar_modelo(db)
+    if not modelo_existe(db):
+        entrenar_modelo(db, motivo="arranque")
     return predecir_tiempo_espera(
-        hora=hora,
-        dia_semana=dia_semana,
-        mesas_ocupadas=mesas_ocupadas,
-        total_items=total_items,
-        total_pedido=total_pedido,
-        db=db,
+        hora=hora, dia_semana=dia_semana, mesas_ocupadas=mesas_ocupadas,
+        total_items=total_items, total_pedido=total_pedido, db=db,
+        restaurante_id=restaurante_id or restaurante_id_de(db, current_user),
     )
 
 
 @router.get("/afluencia")
 def afluencia(
     dia_semana: int = Query(..., ge=0, le=6),
+    restaurante_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    if not modelo_existe():
-        entrenar_modelo(db)
-    return predecir_afluencia_hora(dia_semana=dia_semana)
+    if not modelo_existe(db):
+        entrenar_modelo(db, motivo="arranque")
+    rid = restaurante_id_de(db, current_user) or restaurante_id
+    return predecir_afluencia_hora(dia_semana=dia_semana, db=db, restaurante_id=rid)
 
 
 @router.get("/metricas")
 def metricas(
+    version: Optional[int] = None,
+    desde: Optional[datetime] = None,
+    hasta: Optional[datetime] = None,
+    umbral_mae: float = Query(UMBRAL_MAE_MIN, gt=0),
+    umbral_precision: float = Query(UMBRAL_PRECISION_MIN, ge=0, le=100),
     db: Session = Depends(get_db),
     current_user: dict = Depends(solo_admin),
 ):
-    return calcular_metricas_modelo(db)
+    """Métricas del modelo SOLO con los pedidos de tu restaurante."""
+    return calcular_metricas_modelo(
+        db, restaurante_id_de(db, current_user), version, desde, hasta, umbral_mae, umbral_precision)
 
 
-@router.get("/estado")
-def estado():
-    return {
-        **info_modelo(),
-        "modelo_existe": modelo_existe(),
-    }
+@router.get("/versiones")
+def versiones(db: Session = Depends(get_db), current_user: dict = Depends(solo_admin)):
+    return listar_versiones(db)
+
+
+@router.post("/versiones/{version_id}/activar")
+def activar(version_id: int, db: Session = Depends(get_db), current_user: dict = Depends(solo_admin)):
+    fila = activar_version(db, version_id)
+    if fila is None:
+        raise HTTPException(404, "Versión no encontrada")
+    return {"version": fila.version, "activo": True}
+
+
+@router.get("/historial")
+def historial(
+    limite: int = Query(50, ge=1, le=500),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(solo_admin),
+):
+    return obtener_historial(db, restaurante_id_de(db, current_user), limite)
+
+
+@router.get("/exportar")
+def exportar(
+    version: Optional[int] = None,
+    desde: Optional[datetime] = None,
+    hasta: Optional[datetime] = None,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(solo_admin),
+):
+    """CSV (abre en Excel) con cada predicción, su tiempo real y su error."""
+    filas = filas_para_exportar(db, restaurante_id_de(db, current_user), version, desde, hasta)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["id", "fecha_utc", "pedido_id", "version_modelo", "hora", "dia_semana", "carga",
+                "items", "total_pedido", "minutos_estimados", "rango_min", "rango_max",
+                "confianza", "nivel", "tiempo_real_min", "error_min"])
+    for f in filas:
+        real = f.tiempo_real_minutos
+        w.writerow([
+            f.id, f.creado_en.isoformat() if f.creado_en else "", f.pedido_id or "",
+            f.version_modelo if f.version_modelo is not None else "", f.hora, f.dia_semana,
+            f.mesas_ocupadas, f.total_items, f.total_pedido, f.minutos_estimados, f.rango_min,
+            f.rango_max, f.confianza if f.confianza is not None else "", f.nivel_ocupacion,
+            "" if real is None else round(real, 2),
+            "" if real is None else round(abs(f.minutos_estimados - real), 2),
+        ])
+    return Response(
+        content="﻿" + buf.getvalue(), media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="waitless_predicciones.csv"'},
+    )

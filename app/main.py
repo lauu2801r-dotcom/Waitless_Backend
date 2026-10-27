@@ -27,6 +27,8 @@ from app.modules.clientes import models as clientes_models
 from app.modules.restaurantes.router import router as restaurantes_router
 from app.modules.notificaciones.router import router as notificaciones_router
 from app.modules.notificaciones import models as notificaciones_models
+from app.modules.calificaciones.router import router as calificaciones_router
+from app.modules.calificaciones import models as calificaciones_models
 
 Base.metadata.create_all(bind=engine)
 from app.core.migraciones import asegurar_columnas
@@ -62,6 +64,7 @@ app.include_router(pagos_router,       prefix="/pagos",      tags=["Pagos y fact
 app.include_router(clientes_router,    prefix="/clientes",   tags=["Perfil del cliente"])
 app.include_router(restaurantes_router, prefix="/restaurantes", tags=["Restaurantes"])
 app.include_router(notificaciones_router, prefix="/notificaciones", tags=["Notificaciones"])
+app.include_router(calificaciones_router, prefix="/calificaciones", tags=["Calificaciones"])
 
 from app.core.seed import seed_mesas
 

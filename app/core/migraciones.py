@@ -23,6 +23,14 @@ COLUMNAS_NUEVAS = [
     ("pedidos", "restaurante_id", "INTEGER REFERENCES restaurantes(id)"),
     ("usuarios", "restaurante_id", "INTEGER REFERENCES restaurantes(id)"),
     ("usuarios", "cargo", "VARCHAR(30)"),
+    # ── IA: ciclo cerrado predicción ↔ tiempo real ──
+    ("pedidos", "listo_en", "TIMESTAMP"),
+    ("pedidos", "minutos_estimados", "INTEGER"),
+    ("pedidos", "prediccion_id", "INTEGER"),
+    ("predicciones", "restaurante_id", "INTEGER"),
+    ("predicciones", "confianza", "INTEGER"),
+    ("predicciones", "version_modelo", "INTEGER"),
+    ("predicciones", "fuente", "VARCHAR(10)"),
 ]
 
 

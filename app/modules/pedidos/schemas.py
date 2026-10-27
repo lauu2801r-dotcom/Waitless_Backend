@@ -81,6 +81,7 @@ class PedidoRespuesta(BaseModel):
     restaurante_id: Optional[int] = None
     restaurante_nombre: Optional[str] = None
     mesa_numero: Optional[int] = None
+    minutos_estimados: Optional[int] = None   # estimación de la IA al crear el pedido
 
     # ── NUEVOS CAMPOS ──────────────────────────────────────
     tipo_entrega: TipoEntrega

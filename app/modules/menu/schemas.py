@@ -28,6 +28,8 @@ class ProductoRespuesta(BaseModel):
     creado_en: datetime
     restaurante_id: Optional[int] = None
     restaurante_nombre: Optional[str] = None
+    calificacion_promedio: Optional[float] = None
+    total_calificaciones: int = 0
 
     class Config:
         from_attributes = True

@@ -140,6 +140,8 @@ def avisar_pago(db: Session, pago, factura) -> None:
     if factura is not None:
         crear(db, factura.usuario_id, "pago", "Pago aprobado",
               f"Factura {factura.numero} · {_dinero(factura.total)}", pago.pedido_id)
+        crear(db, factura.usuario_id, "calificacion", f"¿Cómo estuvo tu pedido #{pago.pedido_id}?",
+              "Califica tus platos desde Mis pedidos.", pago.pedido_id)
     else:
         motivo = getattr(pago, "motivo_rechazo", None) or "La pasarela rechazó el pago"
         crear(db, getattr(pago, "usuario_id", None), "pago", "Pago rechazado",

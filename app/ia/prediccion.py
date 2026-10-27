@@ -1,62 +1,63 @@
 """
-WaitLess — Módulo de Predicción (con persistencia en BD)
-=========================================================
-Carga el modelo entrenado, predice el tiempo de espera
-y guarda cada consulta en la tabla `predicciones`.
+WaitLess — Predicción de tiempo de espera (v2)
+===============================================
+- Usa el modelo ACTIVO (ver registro.py).
+- Rango y nivel de confianza salen de lo que "opinan" los 100 árboles del
+  Random Forest: si todos coinciden la confianza es alta; si discrepan, baja.
+- Si el modelo falla o no existe, estima con reglas de negocio (RF: respaldo).
+- Cada predicción se guarda con versión del modelo y variables, para auditoría
+  y para compararla después con el tiempo real.
 """
-
-import os
-import pickle
 import logging
-from datetime import datetime
+import math
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import numpy as np
 from sqlalchemy.orm import Session
 
-from app.ia.entrenamiento import MODEL_PATH, modelo_existe, entrenar_modelo
+from app.ia import registro
+from app.ia.entrenamiento import VARIABLES, hora_local, modelo_existe
 from app.ia.models import Prediccion
+from app.modules.pedidos.models import EstadoPedido, Pedido
 
 logger = logging.getLogger(__name__)
 
-_modelo_cache = None
-_cache_cargado_en: Optional[datetime] = None
+
+def nivel_de_carga(carga: int) -> str:
+    return "bajo" if carga <= 4 else ("medio" if carga <= 9 else "alto")
 
 
-# ─────────────────────────────────────────────────────────────
-#  CARGA DEL MODELO
-# ─────────────────────────────────────────────────────────────
-
-def _cargar_modelo():
-    global _modelo_cache, _cache_cargado_en
-
-    if _modelo_cache is not None:
-        return _modelo_cache
-
-    if not modelo_existe():
-        raise RuntimeError(
-            "El modelo de IA no ha sido entrenado aún. "
-            "Llama primero a POST /ia/entrenar"
-        )
-
-    with open(MODEL_PATH, "rb") as f:
-        _modelo_cache = pickle.load(f)
-
-    _cache_cargado_en = datetime.now()
-    logger.info(f"🔄 Modelo cargado desde {MODEL_PATH}")
-    return _modelo_cache
+def estimar_por_reglas(hora: int, dia_semana: int, carga: int, total_items: int) -> float:
+    """Respaldo cuando no hay modelo: reglas simples de cocina."""
+    t = 8.0 + carga * 0.4 + total_items * 1.2
+    if 12 <= hora <= 14 or 19 <= hora <= 21:
+        t += 7
+    if dia_semana >= 5:
+        t += 4
+    return t
 
 
-def invalidar_cache():
-    global _modelo_cache, _cache_cargado_en
-    _modelo_cache = None
-    _cache_cargado_en = None
-    logger.info("🗑️ Cache del modelo invalidado")
+def _recomendacion(minutos: int) -> str:
+    if minutos <= 10:
+        return "🟢 Tu pedido estará listo muy pronto."
+    if minutos <= 20:
+        return "🟡 Tiempo de espera normal. ¡Gracias por tu paciencia!"
+    return "🔴 Alta demanda en este momento. Te avisaremos cuando esté listo."
 
 
-# ─────────────────────────────────────────────────────────────
-#  PREDICCIÓN (guarda en BD)
-# ─────────────────────────────────────────────────────────────
+def _con_modelo(hora, dia_semana, carga, total_items, total_pedido, db):
+    modelo, version = registro.obtener_modelo(db)
+    x = np.array([[hora, dia_semana, carga, total_items, total_pedido]], dtype=float)
+    xs = modelo.named_steps["scaler"].transform(x)
+    arboles = np.array([t.predict(xs)[0] for t in modelo.named_steps["rf"].estimators_])
+    media = float(arboles.mean())
+    p10, p90 = float(np.percentile(arboles, 10)), float(np.percentile(arboles, 90))
+    # Confianza: 100 % si los árboles coinciden; baja cuanto más se abre el rango.
+    dispersion = (p90 - p10) / max(2.0 * media, 1.0)
+    confianza = int(round(100 * max(0.0, 1.0 - dispersion)))
+    return media, p10, p90, max(35, min(99, confianza)), version
+
 
 def predecir_tiempo_espera(
     hora: int,
@@ -64,72 +65,46 @@ def predecir_tiempo_espera(
     mesas_ocupadas: int,
     total_items: int,
     total_pedido: float,
-    db: Optional[Session] = None,          # ← recibe la sesión para guardar
-    pedido_id: Optional[int] = None,        # ← referencia opcional al pedido
+    db: Optional[Session] = None,
+    pedido_id: Optional[int] = None,
+    restaurante_id: Optional[int] = None,
+    guardar: bool = True,
 ) -> dict:
-    """
-    Predice el tiempo de espera y guarda el resultado en la BD.
+    """`mesas_ocupadas` = carga del restaurante (pedidos en cocina / mesas ocupadas)."""
+    fuente = "modelo"
+    try:
+        media, p10, p90, confianza, version = _con_modelo(
+            hora, dia_semana, mesas_ocupadas, total_items, total_pedido, db)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Modelo no disponible, se usan reglas de negocio: %s", e)
+        fuente, version, confianza = "reglas", None, 50
+        media = estimar_por_reglas(hora, dia_semana, mesas_ocupadas, total_items)
+        p10, p90 = media * 0.8, media * 1.2
 
-    Retorna:
-        {
-          "id": int,                        ← ID del registro guardado en BD
-          "minutos_estimados": int,
-          "rango_min": int,
-          "rango_max": int,
-          "nivel_ocupacion": str,
-          "recomendacion": str,
-          "hora_consulta": str,
-        }
-    """
-    modelo = _cargar_modelo()
+    minutos = round(max(3.0, min(media, 90.0)))
+    rango_min = max(1, min(minutos - 1, math.floor(p10)))
+    rango_max = max(minutos + 1, math.ceil(p90))
+    nivel = nivel_de_carga(mesas_ocupadas)
+    recomendacion = _recomendacion(minutos)
 
-    features = np.array([[hora, dia_semana, mesas_ocupadas, total_items, total_pedido]])
-    prediccion_raw = float(modelo.predict(features)[0])
-    minutos = round(max(3.0, min(prediccion_raw, 90.0)))
-
-    margen = max(2, round(minutos * 0.20))
-    rango_min = max(1, minutos - margen)
-    rango_max = minutos + margen
-
-    if mesas_ocupadas <= 4:
-        nivel = "bajo"
-    elif mesas_ocupadas <= 9:
-        nivel = "medio"
-    else:
-        nivel = "alto"
-
-    if minutos <= 10:
-        recomendacion = "🟢 Tu pedido estará listo muy pronto."
-    elif minutos <= 20:
-        recomendacion = "🟡 Tiempo de espera normal. ¡Gracias por tu paciencia!"
-    else:
-        recomendacion = "🔴 Alta demanda en este momento. Te avisaremos cuando esté listo."
-
-    # ── Guardar en BD ────────────────────────────────────────
     prediccion_id = None
-    if db is not None:
+    if db is not None and guardar:
         try:
-            registro = Prediccion(
-                hora=hora,
-                dia_semana=dia_semana,
-                mesas_ocupadas=mesas_ocupadas,
-                total_items=total_items,
-                total_pedido=total_pedido,
-                minutos_estimados=minutos,
-                rango_min=rango_min,
-                rango_max=rango_max,
-                nivel_ocupacion=nivel,
-                recomendacion=recomendacion,
-                pedido_id=pedido_id,
+            reg = Prediccion(
+                hora=hora, dia_semana=dia_semana, mesas_ocupadas=mesas_ocupadas,
+                total_items=total_items, total_pedido=total_pedido,
+                minutos_estimados=minutos, rango_min=rango_min, rango_max=rango_max,
+                nivel_ocupacion=nivel, recomendacion=recomendacion,
+                confianza=confianza, version_modelo=version, fuente=fuente,
+                restaurante_id=restaurante_id, pedido_id=pedido_id,
             )
-            db.add(registro)
+            db.add(reg)
             db.commit()
-            db.refresh(registro)
-            prediccion_id = registro.id
-            logger.info(f"💾 Predicción guardada en BD con id={prediccion_id}")
-        except Exception as e:
+            db.refresh(reg)
+            prediccion_id = reg.id
+        except Exception as e:  # noqa: BLE001
             db.rollback()
-            logger.error(f"❌ Error guardando predicción en BD: {e}")
+            logger.error("No se pudo guardar la predicción: %s", e)
 
     return {
         "id": prediccion_id,
@@ -138,126 +113,120 @@ def predecir_tiempo_espera(
         "rango_max": rango_max,
         "nivel_ocupacion": nivel,
         "recomendacion": recomendacion,
+        "confianza": confianza,
+        "version_modelo": version,
+        "fuente": fuente,
+        "variables": VARIABLES,
         "hora_consulta": datetime.now().isoformat(),
     }
 
 
-def predecir_afluencia_hora(dia_semana: int) -> list[dict]:
-    """
-    Curva de ocupación estimada por hora del día.
-    No guarda en BD porque es una consulta analítica, no una predicción real.
-    """
-    modelo = _cargar_modelo()
-    horas = list(range(10, 23))
-    items_promedio = 3
-    total_promedio = 45_000.0
-
-    resultados = []
+# ───────────────────────── Afluencia por hora ─────────────────────────
+def _curva_por_modelo(dia_semana: int, db: Optional[Session]) -> list:
+    horas = range(10, 23)
+    out = []
     for h in horas:
-        if 12 <= h <= 14 or 19 <= h <= 21:
-            mesas = 11
-        elif 15 <= h <= 18:
-            mesas = 6
-        else:
-            mesas = 3
-
-        features = np.array([[h, dia_semana, mesas, items_promedio, total_promedio]])
-        tiempo_pred = float(modelo.predict(features)[0])
-        ocupacion = round(min(100, max(5, (tiempo_pred / 35.0) * 80 + 5)))
-
-        sufijo = "am" if h < 12 else "pm"
-        h12 = h if h <= 12 else h - 12
-        hora_label = f"{h12}{sufijo}"
-
-        resultados.append({
-            "hora": f"{h:02d}:00",
-            "hora_label": hora_label,
-            "ocupacion_pct": ocupacion,
-            "es_pico": ocupacion >= 75,
-        })
-
-    return resultados
+        carga = 11 if (12 <= h <= 14 or 19 <= h <= 21) else (6 if 15 <= h <= 18 else 3)
+        try:
+            media, *_ = _con_modelo(h, dia_semana, carga, 3, 45_000.0, db)
+        except Exception:  # noqa: BLE001
+            media = estimar_por_reglas(h, dia_semana, carga, 3)
+        out.append((h, round(min(100, max(5, (media / 35.0) * 80 + 5)))))
+    return out
 
 
-# ─────────────────────────────────────────────────────────────
-#  HISTORIAL DE PREDICCIONES
-# ─────────────────────────────────────────────────────────────
+def _etiqueta(h: int) -> str:
+    h12 = h if h <= 12 else h - 12
+    return f"{h12}{'am' if h < 12 else 'pm'}"
 
-def obtener_historial(db: Session, limite: int = 50) -> list[dict]:
+
+def predecir_afluencia_hora(
+    dia_semana: int, db: Optional[Session] = None, restaurante_id: Optional[int] = None,
+) -> list:
     """
-    Retorna las últimas `limite` predicciones guardadas en la BD.
-    Útil para la pantalla admin.
+    Curva de afluencia por hora. Si el restaurante ya tiene historial se calcula con
+    SUS pedidos reales de las últimas 8 semanas (mismo día de la semana); si aún no
+    tiene suficientes, se estima con el modelo.
     """
-    registros = (
-        db.query(Prediccion)
-        .order_by(Prediccion.creado_en.desc())
-        .limit(limite)
-        .all()
-    )
+    conteo = {h: 0 for h in range(10, 23)}
+    fechas = set()
+    total = 0
+    fuente = "modelo"
+    if db is not None:
+        desde = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=56)
+        q = db.query(Pedido.creado_en).filter(
+            Pedido.creado_en >= desde, Pedido.estado != EstadoPedido.cancelado)
+        if restaurante_id is not None:
+            q = q.filter(Pedido.restaurante_id == restaurante_id)
+        for (c,) in q.all():
+            if c is None:
+                continue
+            loc = hora_local(c)
+            if loc.weekday() == dia_semana and loc.hour in conteo:
+                conteo[loc.hour] += 1
+                fechas.add(loc.date())
+                total += 1
+
+    if total >= 12:
+        fuente = "historial"
+        dias = max(1, len(fechas))
+        prom = {h: conteo[h] / dias for h in conteo}
+        mx = max(prom.values()) or 1.0
+        curva = [(h, round(5 + 90 * prom[h] / mx)) for h in conteo]
+    else:
+        curva = _curva_por_modelo(dia_semana, db)
 
     return [
-        {
-            "id": r.id,
-            "hora": r.hora,
-            "dia_semana": r.dia_semana,
-            "mesas_ocupadas": r.mesas_ocupadas,
-            "total_items": r.total_items,
-            "minutos_estimados": r.minutos_estimados,
-            "rango_min": r.rango_min,
-            "rango_max": r.rango_max,
-            "nivel_ocupacion": r.nivel_ocupacion,
-            "tiempo_real_minutos": r.tiempo_real_minutos,
-            "pedido_id": r.pedido_id,
-            "creado_en": r.creado_en.isoformat() if r.creado_en else None,
-        }
-        for r in registros
+        {"hora": f"{h:02d}:00", "hora_label": _etiqueta(h), "ocupacion_pct": pct,
+         "es_pico": pct >= 75, "fuente": fuente}
+        for h, pct in curva
     ]
 
 
-def registrar_tiempo_real(
-    db: Session,
-    prediccion_id: int,
-    tiempo_real_minutos: float,
-) -> dict:
-    """
-    Actualiza una predicción con el tiempo real que tardó el pedido.
-    Permite calcular qué tan preciso fue el modelo.
-    """
-    registro = db.query(Prediccion).filter(Prediccion.id == prediccion_id).first()
-    if not registro:
-        raise ValueError(f"Predicción con id={prediccion_id} no encontrada")
-
-    registro.tiempo_real_minutos = tiempo_real_minutos
-    db.commit()
-    db.refresh(registro)
-
-    error = abs(registro.minutos_estimados - tiempo_real_minutos)
-    return {
-        "id": registro.id,
-        "minutos_estimados": registro.minutos_estimados,
-        "tiempo_real_minutos": tiempo_real_minutos,
-        "error_minutos": round(error, 2),
-        "actualizado": True,
-    }
-
-
-# ─────────────────────────────────────────────────────────────
-#  INFO DEL MODELO
-# ─────────────────────────────────────────────────────────────
-
-def info_modelo() -> dict:
-    existe = modelo_existe()
-    if not existe:
-        return {
-            "modelo_disponible": False,
-            "mensaje": "El modelo aún no ha sido entrenado.",
+# ───────────────────────── Historial e info ─────────────────────────
+def obtener_historial(db: Session, restaurante_id: Optional[int] = None, limite: int = 50) -> list:
+    q = db.query(Prediccion)
+    if restaurante_id is not None:
+        q = q.filter(Prediccion.restaurante_id == restaurante_id)
+    return [
+        {
+            "id": r.id, "pedido_id": r.pedido_id, "hora": r.hora, "dia_semana": r.dia_semana,
+            "mesas_ocupadas": r.mesas_ocupadas, "total_items": r.total_items,
+            "minutos_estimados": r.minutos_estimados, "rango_min": r.rango_min,
+            "rango_max": r.rango_max, "confianza": r.confianza,
+            "version_modelo": r.version_modelo, "fuente": r.fuente,
+            "nivel_ocupacion": r.nivel_ocupacion,
+            "tiempo_real_minutos": r.tiempo_real_minutos,
+            "creado_en": r.creado_en.isoformat() if r.creado_en else None,
         }
+        for r in q.order_by(Prediccion.id.desc()).limit(limite).all()
+    ]
 
-    size_kb = round(os.path.getsize(MODEL_PATH) / 1024, 1)
-    return {
-        "modelo_disponible": True,
-        "ruta": MODEL_PATH,
-        "tamano_kb": size_kb,
-        "cache_activo": _modelo_cache is not None,
-        "cache_cargado_en": _cache_cargado_en.isoformat() if _cache_cargado_en else None,
-    }
+
+def info_modelo(db: Optional[Session] = None) -> dict:
+    if not modelo_existe(db):
+        return {"modelo_disponible": False, "mensaje": "El modelo aún no ha sido entrenado."}
+    from app.ia.models import ModeloIA
+    propia = db is None
+    if propia:
+        from app.core.database import SessionLocal
+        db = SessionLocal()
+    try:
+        fila = (db.query(ModeloIA).filter(ModeloIA.activo.is_(True))
+                .order_by(ModeloIA.version.desc()).first())
+        if fila is None:
+            return {"modelo_disponible": True, "version": 0, "mensaje": "Modelo heredado (sin versionar)."}
+        return {
+            "modelo_disponible": True,
+            "version": fila.version,
+            "algoritmo": fila.algoritmo,
+            "entrenado_en": fila.entrenado_en.isoformat() if fila.entrenado_en else None,
+            "muestras_reales": fila.muestras_reales,
+            "muestras_sinteticas": fila.muestras_sinteticas,
+            "mae_minutos": fila.mae,
+            "r2_score": fila.r2,
+            "variables": VARIABLES,
+        }
+    finally:
+        if propia:
+            db.close()
