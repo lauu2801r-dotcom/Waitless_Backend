@@ -8,6 +8,7 @@ from app.core.deps import admin_o_empleado, es_personal, get_current_user, resta
 from app.modules.auditoria import service as auditoria
 from app.modules.pagos.service import pedido_pagado
 from app.modules.pedidos import service
+from app.modules.notificaciones import service as notificaciones
 from app.websocket.manager import manager
 from app.modules.pedidos.schemas import (
     PedidoActualizar,
@@ -48,6 +49,7 @@ def crear_pedido(
     manager.emitir("pedidos", evento)
     manager.emitir("dashboard", evento)
     manager.emitir("mesas", {"tipo": "mesas_actualizadas", "mesa_id": pedido.mesa_id})
+    notificaciones.avisar_pedido_creado(db, pedido)
     auditoria.registrar(
         db, "pedido_creado", usuario_id=int(current_user["sub"]),
         email=current_user["email"], entidad="pedido", entidad_id=pedido.id,
@@ -114,6 +116,7 @@ def actualizar_pedido(
     manager.emitir("dashboard", evento)
     manager.emitir(f"usuario:{pedido.usuario_id}", evento)
     manager.emitir("mesas", {"tipo": "mesas_actualizadas", "mesa_id": pedido.mesa_id})
+    notificaciones.avisar_estado_pedido(db, pedido)
     auditoria.registrar(
         db, "pedido_estado_cambiado", usuario_id=int(current_user["sub"]),
         email=current_user["email"], entidad="pedido", entidad_id=pedido_id,

@@ -8,6 +8,7 @@ from app.core.deps import admin_o_empleado, es_personal, get_current_user
 from app.modules.auditoria import service as auditoria
 from app.websocket.manager import manager
 from app.modules.reservas import service
+from app.modules.notificaciones import service as notificaciones
 from app.modules.reservas.schemas import (
     ReservaActualizar,
     ReservaCrear,
@@ -29,6 +30,7 @@ def crear_reserva(
               "mensaje": f"Nueva reserva #{reserva.id}"}
     manager.emitir("dashboard", evento)
     manager.emitir("mesas", {"tipo": "mesas_actualizadas", "mesa_id": reserva.mesa_id})
+    notificaciones.avisar_reserva(db, reserva, "creada")
     auditoria.registrar(
         db, "reserva_creada", usuario_id=int(current_user["sub"]),
         email=current_user["email"], entidad="reserva", entidad_id=reserva.id,
@@ -81,6 +83,7 @@ def actualizar_reserva(
               "mensaje": f"Reserva #{reserva_id} modificada"}
     manager.emitir("dashboard", evento)
     manager.emitir("mesas", {"tipo": "mesas_actualizadas", "mesa_id": reserva.mesa_id})
+    notificaciones.avisar_reserva(db, reserva, "modificada")
     auditoria.registrar(
         db, "reserva_modificada", usuario_id=int(current_user["sub"]),
         email=current_user["email"], entidad="reserva", entidad_id=reserva_id,

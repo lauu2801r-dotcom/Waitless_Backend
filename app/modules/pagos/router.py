@@ -8,6 +8,7 @@ from app.core.database import get_db
 from app.core.deps import admin_o_empleado, es_personal, get_current_user, restaurante_id_de, solo_admin
 from app.modules.auditoria import service as auditoria
 from app.modules.pagos import service
+from app.modules.notificaciones import service as notificaciones
 from app.modules.pagos.models import EstadoFactura, MetodoPago
 from app.modules.pagos.schemas import (
     AnularFactura, FacturaDetalle, FacturaResumen, PagoCrear, PagoRespuesta,
@@ -36,6 +37,7 @@ def pagar(
         detalle=f"{pago.metodo.value} ${pago.monto:,.0f}" + (f" · {factura.numero}" if factura else f" · {pago.motivo_rechazo}"),
         ip=auditoria.ip_de(request),
     )
+    notificaciones.avisar_pago(db, pago, factura)
     if factura is not None:
         evento = {
             "tipo": "pago_aprobado", "pedido_id": pago.pedido_id,
@@ -100,6 +102,7 @@ def anular_factura(
     manager.emitir("dashboard", {
         "tipo": "factura_anulada", "factura": f.numero, "mensaje": f"Factura {f.numero} anulada",
     })
+    notificaciones.avisar_factura_anulada(db, f, datos.motivo)
     return f
 
 
