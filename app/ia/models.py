@@ -69,6 +69,7 @@ class ModeloIA(Base):
     mae = Column(Float, nullable=True)           # error medio en validación (min)
     r2 = Column(Float, nullable=True)
     mae_baseline = Column(Float, nullable=True)  # error de "predecir siempre el promedio"
+    error_p80 = Column(Float, nullable=True)     # el 80 % de los errores de validación fue menor a esto (min)
 
     activo = Column(Boolean, nullable=False, default=False)
     archivo = Column(LargeBinary, nullable=True)  # pipeline serializado

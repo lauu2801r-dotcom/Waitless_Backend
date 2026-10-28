@@ -40,7 +40,7 @@ def estimar_al_crear(db: Session, pedido: Pedido) -> None:
             mesas_ocupadas=_carga_actual(db, pedido.restaurante_id, pedido.id),
             total_items=sum(i.cantidad for i in pedido.items) or 1,
             total_pedido=float(pedido.total or 0),
-            db=db, pedido_id=pedido.id, restaurante_id=pedido.restaurante_id,
+            db=db, pedido_id=pedido.id, restaurante_id=pedido.restaurante_id, carga_de_cocina=True,
         )
         pedido.minutos_estimados = r["minutos_estimados"]
         pedido.prediccion_id = r["id"]

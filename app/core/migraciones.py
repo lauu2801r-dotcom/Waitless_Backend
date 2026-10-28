@@ -31,6 +31,7 @@ COLUMNAS_NUEVAS = [
     ("predicciones", "confianza", "INTEGER"),
     ("predicciones", "version_modelo", "INTEGER"),
     ("predicciones", "fuente", "VARCHAR(10)"),
+    ("modelos_ia", "error_p80", "DOUBLE PRECISION"),
 ]
 
 

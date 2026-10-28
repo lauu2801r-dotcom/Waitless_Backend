@@ -183,7 +183,7 @@ def listar_versiones(db: Session) -> List[dict]:
             "entrenado_en": m.entrenado_en.isoformat() if m.entrenado_en else None,
             "muestras_reales": m.muestras_reales, "muestras_sinteticas": m.muestras_sinteticas,
             "total_muestras": m.total_muestras, "mae_entrenamiento": m.mae, "r2": m.r2,
-            "mae_baseline": m.mae_baseline,
+            "mae_baseline": m.mae_baseline, "error_p80": m.error_p80,
             "variables": json.loads(m.variables) if m.variables else [],
             "predicciones_evaluadas": real["n"], "mae_produccion": real["mae"],
         })

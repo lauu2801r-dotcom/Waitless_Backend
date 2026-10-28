@@ -18,12 +18,12 @@ from app.ia.models import ModeloIA
 logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
-_cache: dict = {"modelo": None, "version": None, "id": None}
+_cache: dict = {"modelo": None, "version": None, "id": None, "error_p80": None}
 
 
 def invalidar() -> None:
     with _lock:
-        _cache.update(modelo=None, version=None, id=None)
+        _cache.update(modelo=None, version=None, id=None, error_p80=None)
     logger.info("Cache del modelo invalidado")
 
 
@@ -48,6 +48,10 @@ def hay_modelo(db: Optional[Session] = None) -> bool:
             db.close()
 
 
+def error_p80_activo() -> Optional[float]:
+    return _cache["error_p80"]
+
+
 def obtener_modelo(db: Optional[Session] = None) -> Tuple[object, int]:
     """Devuelve (pipeline, número de versión). Lanza RuntimeError si no hay ninguno."""
     with _lock:
@@ -66,12 +70,13 @@ def obtener_modelo(db: Optional[Session] = None) -> Tuple[object, int]:
         if fila is None:
             raise RuntimeError("El modelo de IA aún no ha sido entrenado (POST /ia/entrenar).")
         modelo, version, mid = pickle.loads(fila.archivo), fila.version, fila.id
+        e80 = fila.error_p80
     finally:
         if propia:
             db.close()
 
     with _lock:
-        _cache.update(modelo=modelo, version=version, id=mid)
+        _cache.update(modelo=modelo, version=version, id=mid, error_p80=e80)
     logger.info("Modelo cargado: versión %s", version)
     return modelo, version
 

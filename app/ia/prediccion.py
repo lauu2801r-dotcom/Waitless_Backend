@@ -25,7 +25,13 @@ logger = logging.getLogger(__name__)
 
 
 def nivel_de_carga(carga: int) -> str:
+    """Para mesas ocupadas (0-14)."""
     return "bajo" if carga <= 4 else ("medio" if carga <= 9 else "alto")
+
+
+def nivel_cocina(pedidos_en_curso: int) -> str:
+    """Para pedidos que la cocina tiene en curso."""
+    return "bajo" if pedidos_en_curso <= 1 else ("medio" if pedidos_en_curso <= 3 else "alto")
 
 
 def estimar_por_reglas(hora: int, dia_semana: int, carga: int, total_items: int) -> float:
@@ -53,10 +59,15 @@ def _con_modelo(hora, dia_semana, carga, total_items, total_pedido, db):
     arboles = np.array([t.predict(xs)[0] for t in modelo.named_steps["rf"].estimators_])
     media = float(arboles.mean())
     p10, p90 = float(np.percentile(arboles, 10)), float(np.percentile(arboles, 90))
-    # Confianza: 100 % si los árboles coinciden; baja cuanto más se abre el rango.
-    dispersion = (p90 - p10) / max(2.0 * media, 1.0)
-    confianza = int(round(100 * max(0.0, 1.0 - dispersion)))
-    return media, p10, p90, max(35, min(99, confianza)), version
+    # Error típico del modelo (el 80 % de las veces se equivocó menos que esto, en validación)
+    e80 = registro.error_p80_activo()
+    if e80 is None:
+        e80 = (p90 - p10) / 2.0
+    # El rango cubre ≈ 80 % de los casos; es más ancho si los árboles discrepan.
+    medio_ancho = max(e80, (p90 - p10) / 2.0)
+    # Confianza: 100 % si el error esperado es 0; baja cuanto mayor sea frente al tiempo estimado.
+    confianza = int(round(100 * (1.0 - min(1.0, medio_ancho / max(media, 1.0)))))
+    return media, media - medio_ancho, media + medio_ancho, max(35, min(99, confianza)), version
 
 
 def predecir_tiempo_espera(
@@ -69,6 +80,7 @@ def predecir_tiempo_espera(
     pedido_id: Optional[int] = None,
     restaurante_id: Optional[int] = None,
     guardar: bool = True,
+    carga_de_cocina: bool = False,
 ) -> dict:
     """`mesas_ocupadas` = carga del restaurante (pedidos en cocina / mesas ocupadas)."""
     fuente = "modelo"
@@ -84,7 +96,7 @@ def predecir_tiempo_espera(
     minutos = round(max(3.0, min(media, 90.0)))
     rango_min = max(1, min(minutos - 1, math.floor(p10)))
     rango_max = max(minutos + 1, math.ceil(p90))
-    nivel = nivel_de_carga(mesas_ocupadas)
+    nivel = nivel_cocina(mesas_ocupadas) if carga_de_cocina else nivel_de_carga(mesas_ocupadas)
     recomendacion = _recomendacion(minutos)
 
     prediccion_id = None

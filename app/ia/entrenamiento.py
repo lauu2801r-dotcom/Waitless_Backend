@@ -174,6 +174,7 @@ def entrenar_modelo(db: Session, motivo: str = "manual") -> dict:
         mae = round(float(mean_absolute_error(yte, pred)), 2)
         r2 = round(float(r2_score(yte, pred)), 4)
         mae_base = round(float(mean_absolute_error(yte, np.full_like(yte, ytr.mean()))), 2)
+        error_p80 = round(float(np.percentile(np.abs(yte - pred), 80)), 2)
 
         previa = (
             db.query(ModeloIA).filter(ModeloIA.activo.is_(True))
@@ -190,7 +191,7 @@ def entrenar_modelo(db: Session, motivo: str = "manual") -> dict:
         fila = ModeloIA(
             version=version, motivo=motivo, variables=json.dumps(VARIABLES),
             muestras_reales=n_real, muestras_sinteticas=n_sint, total_muestras=len(X),
-            mae=mae, r2=r2, mae_baseline=mae_base, activo=False,
+            mae=mae, r2=r2, mae_baseline=mae_base, error_p80=error_p80, activo=False,
             archivo=pickle.dumps(pipe), entrenado_en=_utc_ahora(),
         )
         db.add(fila)
