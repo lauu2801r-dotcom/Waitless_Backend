@@ -3,6 +3,8 @@ WaitLess — Router del módulo de IA
 ===================================
   GET  /ia/estado                 Estado del modelo activo               (público)
   GET  /ia/predecir               Predice el tiempo de espera            (autenticado)
+  GET  /ia/afluencia-semanal      Pedidos promedio por día de la semana  (autenticado)
+  GET  /ia/contexto               Mesas y cocina del restaurante AHORA   (autenticado)
   GET  /ia/afluencia              Curva de afluencia por hora            (autenticado)
   GET  /ia/metricas               Métricas reales + alertas (filtros)    (administrador)
   GET  /ia/versiones              Versiones del modelo y su rendimiento  (administrador)
@@ -28,8 +30,12 @@ from app.ia.metricas import (
     filas_para_exportar, listar_versiones,
 )
 from app.ia.prediccion import (
-    info_modelo, obtener_historial, predecir_afluencia_hora, predecir_tiempo_espera,
+    info_modelo, nivel_cocina, obtener_historial, predecir_afluencia_hora, predecir_afluencia_semana,
+    predecir_tiempo_espera,
 )
+from app.ia.servicio import _carga_actual
+from app.modules.mesas.models import EstadoMesa
+from app.modules.mesas.service import obtener_mesas
 
 router = APIRouter()
 
@@ -49,20 +55,48 @@ def entrenar(db: Session = Depends(get_db), current_user: dict = Depends(solo_ad
 def predecir(
     hora: int = Query(..., ge=0, le=23),
     dia_semana: int = Query(..., ge=0, le=6),
-    mesas_ocupadas: int = Query(..., ge=0),
     total_items: int = Query(..., ge=1),
     total_pedido: float = Query(..., gt=0),
+    mesas_ocupadas: Optional[int] = Query(None, ge=0),
     restaurante_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
+    """
+    Si NO se manda `mesas_ocupadas`, la carga se calcula sola con los pedidos que la
+    cocina del restaurante tiene en curso (igual que al crear un pedido real).
+    """
     if not modelo_existe(db):
         entrenar_modelo(db, motivo="arranque")
+    rid = restaurante_id_de(db, current_user) or restaurante_id
+    de_cocina = mesas_ocupadas is None
+    carga = _carga_actual(db, rid, excluir_id=-1) if de_cocina else mesas_ocupadas
     return predecir_tiempo_espera(
-        hora=hora, dia_semana=dia_semana, mesas_ocupadas=mesas_ocupadas,
+        hora=hora, dia_semana=dia_semana, mesas_ocupadas=carga,
         total_items=total_items, total_pedido=total_pedido, db=db,
-        restaurante_id=restaurante_id or restaurante_id_de(db, current_user),
+        restaurante_id=rid, carga_de_cocina=de_cocina, guardar=False,
     )
+
+
+@router.get("/contexto")
+def contexto(
+    restaurante_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Cómo está el restaurante AHORA: mesas y pedidos en cocina (para la pantalla del cliente)."""
+    rid = restaurante_id_de(db, current_user) or restaurante_id
+    mesas = obtener_mesas(db, restaurante_id=rid)
+    ocupadas = sum(1 for m in mesas if m.estado == EstadoMesa.ocupada)
+    en_cocina = _carga_actual(db, rid, excluir_id=-1)
+    return {
+        "restaurante_id": rid,
+        "mesas_totales": len(mesas),
+        "mesas_ocupadas": ocupadas,
+        "mesas_libres": len(mesas) - ocupadas,
+        "pedidos_en_cocina": en_cocina,
+        "nivel_cocina": nivel_cocina(en_cocina),
+    }
 
 
 @router.get("/afluencia")
@@ -76,6 +110,17 @@ def afluencia(
         entrenar_modelo(db, motivo="arranque")
     rid = restaurante_id_de(db, current_user) or restaurante_id
     return predecir_afluencia_hora(dia_semana=dia_semana, db=db, restaurante_id=rid)
+
+
+@router.get("/afluencia-semanal")
+def afluencia_semanal(
+    restaurante_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Qué días se llena más el restaurante (con sus pedidos reales)."""
+    rid = restaurante_id_de(db, current_user) or restaurante_id
+    return predecir_afluencia_semana(db, rid)
 
 
 @router.get("/metricas")

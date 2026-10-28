@@ -195,6 +195,43 @@ def predecir_afluencia_hora(
     ]
 
 
+# Patrón típico de un restaurante (lun…dom), solo mientras no hay historial propio.
+_SEMANA_TIPICA = [58, 60, 57, 68, 85, 96, 80]
+
+
+def predecir_afluencia_semana(db: Optional[Session] = None, restaurante_id: Optional[int] = None) -> list:
+    """
+    Pedidos promedio por día de la semana (lunes=0) con el historial real del restaurante
+    de las últimas 8 semanas. Sin historial suficiente devuelve un patrón típico marcado
+    como `fuente: "estimada"`.
+    """
+    por_dia = {d: 0 for d in range(7)}
+    fechas = {d: set() for d in range(7)}
+    total = 0
+    if db is not None:
+        desde = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=56)
+        q = db.query(Pedido.creado_en).filter(
+            Pedido.creado_en >= desde, Pedido.estado != EstadoPedido.cancelado)
+        if restaurante_id is not None:
+            q = q.filter(Pedido.restaurante_id == restaurante_id)
+        for (c,) in q.all():
+            if c is None:
+                continue
+            loc = hora_local(c)
+            por_dia[loc.weekday()] += 1
+            fechas[loc.weekday()].add(loc.date())
+            total += 1
+
+    if total >= 21:
+        prom = {d: por_dia[d] / max(1, len(fechas[d])) for d in range(7)}
+        mx = max(prom.values()) or 1.0
+        return [{"dia_semana": d, "pedidos_promedio": round(prom[d], 1),
+                 "ocupacion_pct": round(5 + 90 * prom[d] / mx), "fuente": "historial"}
+                for d in range(7)]
+    return [{"dia_semana": d, "pedidos_promedio": None,
+             "ocupacion_pct": _SEMANA_TIPICA[d], "fuente": "estimada"} for d in range(7)]
+
+
 # ───────────────────────── Historial e info ─────────────────────────
 def obtener_historial(db: Session, restaurante_id: Optional[int] = None, limite: int = 50) -> list:
     q = db.query(Prediccion)
