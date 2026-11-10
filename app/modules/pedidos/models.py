@@ -27,7 +27,7 @@ class Pedido(Base):
 
     id          = Column(Integer, primary_key=True, index=True)
     usuario_id  = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
-    mesa_id     = Column(Integer, ForeignKey("mesas.id"), nullable=False)
+    mesa_id     = Column(Integer, ForeignKey("mesas.id"), nullable=True)  # null en domicilio
     restaurante_id = Column(Integer, ForeignKey("restaurantes.id"), nullable=True, index=True)
     reserva_id  = Column(Integer, ForeignKey("reservas.id"), nullable=True)
     estado      = Column(Enum(EstadoPedido), default=EstadoPedido.pendiente)
@@ -41,6 +41,9 @@ class Pedido(Base):
         nullable=False,
     )
     direccion_domicilio = Column(String(300), nullable=True)
+    telefono_contacto      = Column(String(20), nullable=True)
+    indicaciones_domicilio = Column(String(200), nullable=True)
+    costo_envio            = Column(Float, nullable=True, default=0.0)
 
     # ── IA: tiempo estimado al crear y momento real en que quedó listo ──
     listo_en            = Column(DateTime, nullable=True)

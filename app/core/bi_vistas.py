@@ -254,8 +254,11 @@ SELECT i.id                                   AS insumo_id,
        (i.stock_actual <= i.stock_minimo)     AS bajo_el_minimo,
        i.costo_unitario                       AS costo_unitario,
        ROUND((i.stock_actual * i.costo_unitario)::numeric, 2) AS valor_en_stock,
-       COALESCE(pv.nombre, 'Sin proveedor')   AS proveedor
+       COALESCE(pv.nombre, 'Sin proveedor')   AS proveedor,
+       i.restaurante_id                       AS restaurante_id,
+       r.nombre                               AS restaurante
 FROM insumos i
+LEFT JOIN restaurantes r ON r.id = i.restaurante_id
 LEFT JOIN proveedores pv ON pv.id = i.proveedor_id
 WHERE i.activo
 """

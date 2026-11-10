@@ -39,6 +39,8 @@ def pagar(
     )
     notificaciones.avisar_pago(db, pago, factura)
     if factura is not None:
+        notificaciones.avisar_pago_al_restaurante(db, pago.pedido_id, factura)
+    if factura is not None:
         evento = {
             "tipo": "pago_aprobado", "pedido_id": pago.pedido_id,
             "factura": factura.numero, "total": factura.total,

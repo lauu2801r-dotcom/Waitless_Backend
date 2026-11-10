@@ -21,8 +21,22 @@ class Reserva(Base):
     estado = Column(Enum(EstadoReserva), default=EstadoReserva.pendiente)
     notas = Column(Text, nullable=True)
     tiempo_espera_estimado = Column(Integer, nullable=True)
+    motivo_cancelacion = Column(String(255), nullable=True)
     creado_en = Column(DateTime, server_default=func.now())
     actualizado_en = Column(DateTime, onupdate=func.now())
 
     usuario = relationship("Usuario", backref="reservas")
     mesa = relationship("Mesa", backref="reservas")
+
+    @property
+    def mesa_numero(self):
+        return self.mesa.numero if self.mesa else None
+
+    @property
+    def restaurante_id(self):
+        return self.mesa.restaurante_id if self.mesa else None
+
+    @property
+    def cliente_nombre(self):
+        u = self.usuario
+        return f"{u.nombre} {u.apellido}".strip() if u else None

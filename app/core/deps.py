@@ -118,3 +118,18 @@ def restaurante_id_de(db: Session, current_user: dict) -> Optional[int]:
         .first()
     )
     return r[0] if r else None
+
+
+def restaurante_requerido(db: Session, current_user: dict) -> int:
+    """
+    Igual que restaurante_id_de, pero obligatorio: cada restaurante tiene su
+    propio inventario, proveedores y compras, así que quien los usa debe
+    pertenecer a un restaurante (si no, 403).
+    """
+    rid = restaurante_id_de(db, current_user)
+    if rid is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tu usuario no está asociado a ningún restaurante",
+        )
+    return rid

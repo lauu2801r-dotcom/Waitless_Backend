@@ -41,7 +41,9 @@ def _autenticar(token: Optional[str]) -> Optional[dict]:
         if not u or not u.activo or not u.verificado:
             return None
         rol = getattr(u.rol, "value", u.rol)
-        return {"id": u.id, "email": u.email, "rol": rol}
+        from app.core.deps import restaurante_id_de
+        rid = restaurante_id_de(db, {"sub": str(u.id), "rol": rol})
+        return {"id": u.id, "email": u.email, "rol": rol, "restaurante_id": rid}
     finally:
         db.close()
 
@@ -57,7 +59,7 @@ async def _atender(websocket: WebSocket, sala: str, token: Optional[str],
         # Se cierra antes de aceptar: el cliente recibe el rechazo del handshake.
         await websocket.close(code=4401)
         return
-    await manager.connect(websocket, sala)
+    await manager.connect(websocket, sala, user.get("restaurante_id"))
     try:
         await manager.send_personal(websocket, {
             "tipo": "conexion", "mensaje": saludo, "sala": sala,

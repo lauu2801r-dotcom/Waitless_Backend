@@ -29,10 +29,12 @@ def _anotar(orden: OrdenCompra, detalle: str, usuario_id: int, email: str):
     ))
 
 
-def _armar_items(db: Session, items: List[ItemOrdenCrear]) -> List[ItemOrden]:
+def _armar_items(db: Session, items: List[ItemOrdenCrear], rid: int) -> List[ItemOrden]:
     resultado = []
     for it in items:
-        insumo = db.query(Insumo).filter(Insumo.id == it.insumo_id).first()
+        insumo = db.query(Insumo).filter(
+            Insumo.id == it.insumo_id, Insumo.restaurante_id == rid
+        ).first()
         if not insumo or not insumo.activo:
             raise _error(400, f"El insumo {it.insumo_id} no existe o está desactivado")
         costo = it.costo_unitario if it.costo_unitario is not None else insumo.costo_unitario
@@ -43,8 +45,12 @@ def _armar_items(db: Session, items: List[ItemOrdenCrear]) -> List[ItemOrden]:
     return resultado
 
 
-def crear_orden(db: Session, datos: OrdenCrear, usuario_id: int, email: str) -> OrdenCompra:
-    prov = db.query(Proveedor).filter(Proveedor.id == datos.proveedor_id).first()
+def crear_orden(
+    db: Session, datos: OrdenCrear, usuario_id: int, email: str, rid: int
+) -> OrdenCompra:
+    prov = db.query(Proveedor).filter(
+        Proveedor.id == datos.proveedor_id, Proveedor.restaurante_id == rid
+    ).first()
     if not prov:
         raise _error(400, "El proveedor indicado no existe")
     if not prov.activo:
@@ -53,11 +59,11 @@ def crear_orden(db: Session, datos: OrdenCrear, usuario_id: int, email: str) -> 
         raise _error(400, "La fecha de entrega esperada no puede estar en el pasado")
 
     orden = OrdenCompra(
-        proveedor_id=prov.id, estado=EstadoOrden.pendiente,
+        restaurante_id=rid, proveedor_id=prov.id, estado=EstadoOrden.pendiente,
         fecha_entrega_esperada=datos.fecha_entrega_esperada, notas=datos.notas,
         creado_por_id=usuario_id, creado_por_email=email,
     )
-    orden.items = _armar_items(db, datos.items)
+    orden.items = _armar_items(db, datos.items, rid)
     _anotar(orden, "Orden creada", usuario_id, email)
     db.add(orden)
     db.commit()
@@ -67,6 +73,7 @@ def crear_orden(db: Session, datos: OrdenCrear, usuario_id: int, email: str) -> 
 
 def listar_ordenes(
     db: Session,
+    rid: int,
     estado: Optional[EstadoOrden] = None,
     proveedor_id: Optional[int] = None,
     desde: Optional[datetime] = None,
@@ -74,7 +81,11 @@ def listar_ordenes(
     limit: int = 100,
     offset: int = 0,
 ):
-    q = db.query(OrdenCompra).options(joinedload(OrdenCompra.proveedor), joinedload(OrdenCompra.items))
+    q = (
+        db.query(OrdenCompra)
+        .options(joinedload(OrdenCompra.proveedor), joinedload(OrdenCompra.items))
+        .filter(OrdenCompra.restaurante_id == rid)
+    )
     if estado:
         q = q.filter(OrdenCompra.estado == estado)
     if proveedor_id is not None:
@@ -89,17 +100,19 @@ def listar_ordenes(
     )
 
 
-def obtener_orden(db: Session, orden_id: int) -> OrdenCompra:
-    orden = db.query(OrdenCompra).filter(OrdenCompra.id == orden_id).first()
+def obtener_orden(db: Session, orden_id: int, rid: int) -> OrdenCompra:
+    orden = db.query(OrdenCompra).filter(
+        OrdenCompra.id == orden_id, OrdenCompra.restaurante_id == rid
+    ).first()
     if not orden:
         raise _error(404, "Orden de compra no encontrada")
     return orden
 
 
 def actualizar_orden(
-    db: Session, orden_id: int, datos: OrdenActualizar, usuario_id: int, email: str
+    db: Session, orden_id: int, datos: OrdenActualizar, usuario_id: int, email: str, rid: int
 ) -> OrdenCompra:
-    orden = obtener_orden(db, orden_id)
+    orden = obtener_orden(db, orden_id, rid)
     if orden.estado != EstadoOrden.pendiente:
         raise _error(400, "Solo se puede editar una orden pendiente (sin recepciones)")
     cambios = datos.model_dump(exclude_unset=True)
@@ -110,7 +123,7 @@ def actualizar_orden(
     if "notas" in cambios:
         orden.notas = cambios["notas"]
     if datos.items is not None:
-        orden.items = _armar_items(db, datos.items)  # reemplaza (delete-orphan)
+        orden.items = _armar_items(db, datos.items, rid)  # reemplaza (delete-orphan)
     _anotar(orden, "Orden modificada", usuario_id, email)
     db.commit()
     db.refresh(orden)
@@ -128,7 +141,7 @@ def _recalcular_estado(orden: OrdenCompra):
 
 
 def recibir_orden(
-    db: Session, orden_id: int, datos: RecepcionCrear, usuario_id: int, email: str
+    db: Session, orden_id: int, datos: RecepcionCrear, usuario_id: int, email: str, rid: int
 ) -> OrdenCompra:
     """
     Registra lo que llegó. Por cada producto:
@@ -138,7 +151,9 @@ def recibir_orden(
     Todo en una sola transacción: o se guarda todo o nada.
     """
     orden = (
-        db.query(OrdenCompra).filter(OrdenCompra.id == orden_id).with_for_update().first()
+        db.query(OrdenCompra)
+        .filter(OrdenCompra.id == orden_id, OrdenCompra.restaurante_id == rid)
+        .with_for_update().first()
     )
     if not orden:
         raise _error(404, "Orden de compra no encontrada")
@@ -183,8 +198,10 @@ def recibir_orden(
     return orden
 
 
-def cancelar_orden(db: Session, orden_id: int, usuario_id: int, email: str) -> OrdenCompra:
-    orden = obtener_orden(db, orden_id)
+def cancelar_orden(
+    db: Session, orden_id: int, usuario_id: int, email: str, rid: int
+) -> OrdenCompra:
+    orden = obtener_orden(db, orden_id, rid)
     if orden.estado in (EstadoOrden.completa, EstadoOrden.cancelada):
         raise _error(400, f"La orden ya está {orden.estado.value}")
     detalle = "Orden cancelada"
@@ -221,17 +238,23 @@ def _metricas_de(prov: Proveedor, ordenes: List[OrdenCompra]) -> MetricasProveed
     )
 
 
-def metricas_proveedor(db: Session, proveedor_id: int) -> MetricasProveedor:
-    prov = db.query(Proveedor).filter(Proveedor.id == proveedor_id).first()
+def metricas_proveedor(db: Session, proveedor_id: int, rid: int) -> MetricasProveedor:
+    prov = db.query(Proveedor).filter(
+        Proveedor.id == proveedor_id, Proveedor.restaurante_id == rid
+    ).first()
     if not prov:
         raise _error(404, "Proveedor no encontrado")
-    ordenes = db.query(OrdenCompra).filter(OrdenCompra.proveedor_id == proveedor_id).all()
+    ordenes = db.query(OrdenCompra).filter(
+        OrdenCompra.proveedor_id == proveedor_id, OrdenCompra.restaurante_id == rid
+    ).all()
     return _metricas_de(prov, ordenes)
 
 
-def metricas_todos(db: Session) -> List[MetricasProveedor]:
-    provs = db.query(Proveedor).order_by(Proveedor.nombre).all()
-    todas = db.query(OrdenCompra).all()
+def metricas_todos(db: Session, rid: int) -> List[MetricasProveedor]:
+    provs = db.query(Proveedor).filter(
+        Proveedor.restaurante_id == rid
+    ).order_by(Proveedor.nombre).all()
+    todas = db.query(OrdenCompra).filter(OrdenCompra.restaurante_id == rid).all()
     return [
         _metricas_de(p, [o for o in todas if o.proveedor_id == p.id])
         for p in provs

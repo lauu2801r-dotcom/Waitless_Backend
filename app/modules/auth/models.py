@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -60,6 +60,15 @@ class Restaurante(Base):
     descripcion       = Column(String(255), nullable=True)
     tipo_cocina       = Column(String(100), nullable=True)
     emoji             = Column(String(10), nullable=True)
+    direccion         = Column(String(200), nullable=True)
+    telefono          = Column(String(30), nullable=True)
+    instagram         = Column(String(100), nullable=True)
+    horarios          = Column(Text, nullable=True)   # JSON: {"semana": {...}, "especiales": [...]}
+    galeria           = Column(Text, nullable=True)   # JSON: lista de URLs de imágenes
+    domicilio_activo  = Column(Boolean, nullable=True)    # None = activo (por defecto)
+    costo_domicilio   = Column(Integer, nullable=True)    # None = 5000
+    pedido_minimo_domicilio = Column(Integer, nullable=True)  # None = sin mínimo
+    minutos_alerta_mesa = Column(Integer, nullable=True)   # tiempo máximo de una mesa ocupada antes de avisar (def. 90)
     activo            = Column(Boolean, nullable=False, default=True, server_default="1")
     creado_en         = Column(DateTime, server_default=func.now())
     actualizado_en    = Column(DateTime, onupdate=func.now())

@@ -22,36 +22,43 @@ def _redondear(x: float) -> float:
 
 
 # ───────────────────────── Proveedores ─────────────────────────
-def crear_proveedor(db: Session, datos: ProveedorCrear) -> Proveedor:
-    if db.query(Proveedor).filter(Proveedor.nombre.ilike(datos.nombre)).first():
+def crear_proveedor(db: Session, datos: ProveedorCrear, rid: int) -> Proveedor:
+    if db.query(Proveedor).filter(
+        Proveedor.restaurante_id == rid, Proveedor.nombre.ilike(datos.nombre)
+    ).first():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ya existe un proveedor con ese nombre")
-    prov = Proveedor(**datos.model_dump())
+    prov = Proveedor(**datos.model_dump(), restaurante_id=rid)
     db.add(prov)
     db.commit()
     db.refresh(prov)
     return prov
 
 
-def listar_proveedores(db: Session, activo: Optional[bool] = True):
-    q = db.query(Proveedor)
+def listar_proveedores(db: Session, rid: int, activo: Optional[bool] = True):
+    q = db.query(Proveedor).filter(Proveedor.restaurante_id == rid)
     if activo is not None:
         q = q.filter(Proveedor.activo == activo)
     return q.order_by(Proveedor.nombre).all()
 
 
-def obtener_proveedor(db: Session, proveedor_id: int) -> Proveedor:
-    prov = db.query(Proveedor).filter(Proveedor.id == proveedor_id).first()
+def obtener_proveedor(db: Session, proveedor_id: int, rid: int) -> Proveedor:
+    prov = db.query(Proveedor).filter(
+        Proveedor.id == proveedor_id, Proveedor.restaurante_id == rid
+    ).first()
     if not prov:
         raise _no_encontrado("Proveedor")
     return prov
 
 
-def actualizar_proveedor(db: Session, proveedor_id: int, datos: ProveedorActualizar) -> Proveedor:
-    prov = obtener_proveedor(db, proveedor_id)
+def actualizar_proveedor(
+    db: Session, proveedor_id: int, datos: ProveedorActualizar, rid: int
+) -> Proveedor:
+    prov = obtener_proveedor(db, proveedor_id, rid)
     cambios = datos.model_dump(exclude_unset=True)
     if "nombre" in cambios and cambios["nombre"] is not None:
         otro = db.query(Proveedor).filter(
-            Proveedor.nombre.ilike(cambios["nombre"]), Proveedor.id != proveedor_id
+            Proveedor.restaurante_id == rid,
+            Proveedor.nombre.ilike(cambios["nombre"]), Proveedor.id != proveedor_id,
         ).first()
         if otro:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ya existe un proveedor con ese nombre")
@@ -63,18 +70,25 @@ def actualizar_proveedor(db: Session, proveedor_id: int, datos: ProveedorActuali
 
 
 # ───────────────────────── Insumos ─────────────────────────
-def _validar_proveedor(db: Session, proveedor_id: Optional[int]):
-    if proveedor_id is not None and not db.query(Proveedor).filter(Proveedor.id == proveedor_id).first():
+def _validar_proveedor(db: Session, proveedor_id: Optional[int], rid: int):
+    """El proveedor debe existir Y ser de este restaurante."""
+    if proveedor_id is not None and not db.query(Proveedor).filter(
+        Proveedor.id == proveedor_id, Proveedor.restaurante_id == rid
+    ).first():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "El proveedor indicado no existe")
 
 
-def crear_insumo(db: Session, datos: InsumoCrear, usuario_id: int, email: str) -> Insumo:
-    if db.query(Insumo).filter(Insumo.nombre.ilike(datos.nombre)).first():
+def crear_insumo(
+    db: Session, datos: InsumoCrear, usuario_id: int, email: str, rid: int
+) -> Insumo:
+    if db.query(Insumo).filter(
+        Insumo.restaurante_id == rid, Insumo.nombre.ilike(datos.nombre)
+    ).first():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ya existe un insumo con ese nombre")
-    _validar_proveedor(db, datos.proveedor_id)
+    _validar_proveedor(db, datos.proveedor_id, rid)
 
     campos = datos.model_dump(exclude={"stock_inicial"})
-    insumo = Insumo(**campos, stock_actual=0)
+    insumo = Insumo(**campos, stock_actual=0, restaurante_id=rid)
     db.add(insumo)
     db.flush()  # para tener insumo.id
 
@@ -93,12 +107,15 @@ def crear_insumo(db: Session, datos: InsumoCrear, usuario_id: int, email: str) -
 
 def listar_insumos(
     db: Session,
+    rid: int,
     categoria: Optional[str] = None,
     buscar: Optional[str] = None,
     estado: Optional[str] = None,
     activo: Optional[bool] = True,
 ):
-    q = db.query(Insumo).options(joinedload(Insumo.proveedor))
+    q = db.query(Insumo).options(joinedload(Insumo.proveedor)).filter(
+        Insumo.restaurante_id == rid
+    )
     if activo is not None:
         q = q.filter(Insumo.activo == activo)
     if categoria:
@@ -111,24 +128,29 @@ def listar_insumos(
     return insumos
 
 
-def obtener_insumo(db: Session, insumo_id: int) -> Insumo:
-    insumo = db.query(Insumo).filter(Insumo.id == insumo_id).first()
+def obtener_insumo(db: Session, insumo_id: int, rid: int) -> Insumo:
+    insumo = db.query(Insumo).filter(
+        Insumo.id == insumo_id, Insumo.restaurante_id == rid
+    ).first()
     if not insumo:
         raise _no_encontrado("Insumo")
     return insumo
 
 
-def actualizar_insumo(db: Session, insumo_id: int, datos: InsumoActualizar) -> Insumo:
-    insumo = obtener_insumo(db, insumo_id)
+def actualizar_insumo(
+    db: Session, insumo_id: int, datos: InsumoActualizar, rid: int
+) -> Insumo:
+    insumo = obtener_insumo(db, insumo_id, rid)
     cambios = datos.model_dump(exclude_unset=True)
     if cambios.get("nombre"):
         otro = db.query(Insumo).filter(
-            Insumo.nombre.ilike(cambios["nombre"]), Insumo.id != insumo_id
+            Insumo.restaurante_id == rid,
+            Insumo.nombre.ilike(cambios["nombre"]), Insumo.id != insumo_id,
         ).first()
         if otro:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ya existe un insumo con ese nombre")
     if "proveedor_id" in cambios:
-        _validar_proveedor(db, cambios["proveedor_id"])
+        _validar_proveedor(db, cambios["proveedor_id"], rid)
     for campo, valor in cambios.items():
         setattr(insumo, campo, valor)
     db.commit()
@@ -138,7 +160,7 @@ def actualizar_insumo(db: Session, insumo_id: int, datos: InsumoActualizar) -> I
 
 # ───────────────────────── Movimientos ─────────────────────────
 def registrar_movimiento(
-    db: Session, datos: MovimientoCrear, usuario_id: int, email: str
+    db: Session, datos: MovimientoCrear, usuario_id: int, email: str, rid: int
 ) -> Tuple[MovimientoInventario, Insumo, bool]:
     """
     Registra una entrada o salida.
@@ -148,7 +170,9 @@ def registrar_movimiento(
     Devuelve (movimiento, insumo, hay_alerta).
     """
     insumo = (
-        db.query(Insumo).filter(Insumo.id == datos.insumo_id).with_for_update().first()
+        db.query(Insumo)
+        .filter(Insumo.id == datos.insumo_id, Insumo.restaurante_id == rid)
+        .with_for_update().first()
     )
     if not insumo:
         raise _no_encontrado("Insumo")
@@ -188,6 +212,7 @@ def registrar_movimiento(
 
 def listar_movimientos(
     db: Session,
+    rid: int,
     insumo_id: Optional[int] = None,
     tipo: Optional[TipoMovimiento] = None,
     desde: Optional[datetime] = None,
@@ -195,7 +220,12 @@ def listar_movimientos(
     limit: int = 100,
     offset: int = 0,
 ):
-    q = db.query(MovimientoInventario).options(joinedload(MovimientoInventario.insumo))
+    q = (
+        db.query(MovimientoInventario)
+        .join(Insumo, Insumo.id == MovimientoInventario.insumo_id)
+        .options(joinedload(MovimientoInventario.insumo))
+        .filter(Insumo.restaurante_id == rid)
+    )
     if insumo_id is not None:
         q = q.filter(MovimientoInventario.insumo_id == insumo_id)
     if tipo is not None:
@@ -210,8 +240,10 @@ def listar_movimientos(
     )
 
 
-def resumen(db: Session) -> ResumenInventario:
-    insumos = db.query(Insumo).filter(Insumo.activo == True).all()  # noqa: E712
+def resumen(db: Session, rid: int) -> ResumenInventario:
+    insumos = db.query(Insumo).filter(
+        Insumo.activo == True, Insumo.restaurante_id == rid  # noqa: E712
+    ).all()
     return ResumenInventario(
         total_insumos=len(insumos),
         bajo_stock=sum(1 for i in insumos if i.estado == "bajo"),
@@ -220,7 +252,7 @@ def resumen(db: Session) -> ResumenInventario:
     )
 
 
-def alertas(db: Session):
+def alertas(db: Session, rid: int):
     """Insumos en nivel crítico (bajo o agotado), los más críticos primero."""
-    criticos = [i for i in listar_insumos(db) if i.estado in ("bajo", "agotado")]
+    criticos = [i for i in listar_insumos(db, rid) if i.estado in ("bajo", "agotado")]
     return sorted(criticos, key=lambda i: (i.estado != "agotado", i.nombre))

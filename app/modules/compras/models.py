@@ -21,6 +21,7 @@ class OrdenCompra(Base):
     __tablename__ = "ordenes_compra"
 
     id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id"), nullable=True, index=True)
     proveedor_id = Column(Integer, ForeignKey("proveedores.id"), nullable=False, index=True)
     estado = Column(Enum(EstadoOrden), nullable=False, default=EstadoOrden.pendiente)
     fecha_entrega_esperada = Column(Date, nullable=True)

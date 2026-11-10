@@ -115,19 +115,30 @@ def _dinero(v: float) -> str:
     return "$" + f"{round(v):,}".replace(",", ".")
 
 
+def _lugar(pedido) -> str:
+    """'Mesa 4' o 'Domicilio' según el tipo de pedido."""
+    if getattr(getattr(pedido, "tipo_entrega", None), "value", getattr(pedido, "tipo_entrega", None)) == "domicilio":
+        return "Domicilio"
+    return f"Mesa {pedido.mesa_numero or pedido.mesa_id}"
+
+
 def avisar_pedido_creado(db: Session, pedido) -> None:
     donde = pedido.restaurante_nombre or "el restaurante"
     crear(db, pedido.usuario_id, "pedido", f"Pedido #{pedido.id} recibido",
-          f"{donde} · Mesa {pedido.mesa_numero or pedido.mesa_id} · {_dinero(pedido.total)}", pedido.id)
+          f"{donde} · {_lugar(pedido)} · {_dinero(pedido.total)}", pedido.id)
 
 
 def avisar_estado_pedido(db: Session, pedido) -> None:
     estado = getattr(pedido.estado, "value", pedido.estado)
     donde = pedido.restaurante_nombre or "el restaurante"
-    mesa = pedido.mesa_numero or pedido.mesa_id
+    lugar = _lugar(pedido)
+    domicilio = lugar == "Domicilio"
     textos = {
         "en_preparacion": (f"Tu pedido #{pedido.id} está en preparación", f"{donde} ya está preparando tus platos."),
-        "listo": (f"¡Tu pedido #{pedido.id} está listo!", f"{donde} · Mesa {mesa}"),
+        "listo": (
+            (f"¡Tu domicilio #{pedido.id} va en camino!", f"{donde} · {pedido.direccion_domicilio or 'tu dirección'}")
+            if domicilio else (f"¡Tu pedido #{pedido.id} está listo!", f"{donde} · {lugar}")
+        ),
         "entregado": (f"Pedido #{pedido.id} entregado", "Ya puedes pagarlo desde Mis pedidos."),
         "cancelado": (f"Pedido #{pedido.id} cancelado", f"{donde}"),
     }
@@ -153,7 +164,7 @@ def avisar_factura_anulada(db: Session, factura, motivo: str) -> None:
           f"{factura.numero}: {motivo}", factura.pedido_id)
 
 
-def avisar_reserva(db: Session, reserva, accion: str) -> None:
+def avisar_reserva(db: Session, reserva, accion: str, motivo: Optional[str] = None) -> None:
     cuando = reserva.fecha_hora.strftime("%d/%m %I:%M %p") if reserva.fecha_hora else ""
     titulos = {
         "creada": "Reserva recibida",
@@ -161,5 +172,76 @@ def avisar_reserva(db: Session, reserva, accion: str) -> None:
         "cancelada": "Reserva cancelada",
     }
     crear(db, reserva.usuario_id, "reserva", titulos.get(accion, "Reserva actualizada"),
-          f"Mesa {reserva.mesa.numero if reserva.mesa else reserva.mesa_id} · {cuando} · {reserva.numero_personas} personas",
+          f"Mesa {reserva.mesa.numero if reserva.mesa else reserva.mesa_id} · {cuando} · {reserva.numero_personas} personas"
+          + (f" · Motivo: {motivo}" if motivo else ""),
           reserva.id)
+
+
+# ───────────── Avisos al personal del restaurante (administrador + empleados) ─────────────
+def avisar_personal(db: Session, restaurante_id: Optional[int], tipo: str, titulo: str,
+                    detalle: Optional[str] = None, referencia_id: Optional[int] = None,
+                    excluir_usuario_id: Optional[int] = None) -> None:
+    """Crea la misma notificación para el administrador y los empleados de ese restaurante."""
+    if restaurante_id is None:
+        return
+    try:
+        from app.modules.auth.models import Restaurante, Usuario
+
+        ids = set()
+        rest = db.query(Restaurante).filter(Restaurante.id == restaurante_id).first()
+        if rest and rest.administrador_id:
+            ids.add(rest.administrador_id)
+        for (uid,) in db.query(Usuario.id).filter(
+            Usuario.restaurante_id == restaurante_id, Usuario.activo == True  # noqa: E712
+        ).all():
+            ids.add(uid)
+        ids.discard(excluir_usuario_id)
+        for uid in ids:
+            crear(db, uid, tipo, titulo, detalle, referencia_id)
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        logger.warning("No se pudo avisar al personal (%s): %s", titulo, e)
+
+
+def avisar_reserva_al_restaurante(db: Session, reserva, accion: str, motivo: Optional[str] = None,
+                                  excluir_usuario_id: Optional[int] = None) -> None:
+    rid = reserva.mesa.restaurante_id if reserva.mesa else None
+    titulos = {"creada": "Nueva reserva", "modificada": "Reserva modificada",
+               "cancelada": "Reserva cancelada por el cliente"}
+    cuando = reserva.fecha_hora.strftime("%d/%m %I:%M %p") if reserva.fecha_hora else ""
+    detalle = f"Mesa {reserva.mesa.numero} · {cuando} · {reserva.numero_personas} personas"
+    if motivo:
+        detalle += f" · Motivo: {motivo}"
+    avisar_personal(db, rid, "reserva", titulos.get(accion, "Reserva actualizada"), detalle,
+                    reserva.id, excluir_usuario_id)
+
+
+def avisar_pedido_al_restaurante(db: Session, pedido) -> None:
+    avisar_personal(db, pedido.restaurante_id, "pedido", f"Nuevo pedido #{pedido.id}",
+                    f"{_lugar(pedido)} · {_dinero(pedido.total)}", pedido.id)
+
+
+def avisar_pago_al_restaurante(db: Session, pedido_id: int, factura) -> None:
+    from app.modules.pedidos.models import Pedido
+
+    ped = db.query(Pedido).filter(Pedido.id == pedido_id).first()
+    if ped is None:
+        return
+    avisar_personal(db, ped.restaurante_id, "pago", f"Pago recibido · pedido #{pedido_id}",
+                    f"{factura.numero} · {_dinero(factura.total)}", pedido_id)
+
+
+def avisar_resena_al_restaurante(db: Session, pedido_id: int) -> None:
+    from sqlalchemy import func
+
+    from app.modules.calificaciones.models import Calificacion
+
+    filas = db.query(Calificacion).filter(Calificacion.pedido_id == pedido_id).all()
+    if not filas:
+        return
+    prom = sum(f.estrellas for f in filas) / len(filas)
+    coment = next((f.comentario for f in filas if f.comentario), None)
+    detalle = f"Pedido #{pedido_id} · {prom:.1f}/5"
+    if coment:
+        detalle += f" · “{coment[:120]}”"
+    avisar_personal(db, filas[0].restaurante_id, "calificacion", "Nueva reseña", detalle, pedido_id)

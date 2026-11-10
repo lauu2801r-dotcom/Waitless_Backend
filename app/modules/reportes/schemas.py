@@ -17,8 +17,9 @@ class ItemReciente(BaseModel):
 
 class PedidoReciente(BaseModel):
     id: int
-    mesa_id: int
+    mesa_id: Optional[int] = None
     mesa_numero: Optional[int] = None
+    tipo_entrega: str = "restaurante"
     total: float
     estado: str
     hace_minutos: int

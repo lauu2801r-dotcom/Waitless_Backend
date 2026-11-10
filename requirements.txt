@@ -14,3 +14,5 @@ scikit-learn==1.8.0
 numpy==2.4.4
 pandas==3.0.3
 joblib==1.4.2
+# ── Reportes PDF ─────────────
+reportlab>=4.2

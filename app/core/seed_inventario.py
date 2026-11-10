@@ -1,11 +1,14 @@
 """
 Carga datos de ejemplo de inventario (los mismos de la pantalla de diseño).
-Solo funciona si todavía no hay insumos. Se ejecuta UNA vez:
+Cada restaurante tiene su propio inventario: el script crea el de ejemplo
+para cada restaurante que todavía no tenga insumos. Se puede ejecutar varias
+veces sin duplicar nada:
 
     python -m app.core.seed_inventario
 """
 from app.core.database import Base, SessionLocal, engine
-from app.modules.auth.models import Usuario  # noqa: F401  (necesario para las FK)
+from app.modules.auth.models import Restaurante, Usuario  # noqa: F401  (necesario para las FK)
+from app.modules.compras import models as _compras  # noqa: F401
 from app.modules.inventario.models import (
     Insumo, MovimientoInventario, Proveedor, TipoMovimiento,
 )
@@ -31,35 +34,45 @@ INSUMOS = [
 ]
 
 
+def seed_restaurante(db, restaurante_id: int) -> bool:
+    """Crea el inventario de ejemplo de UN restaurante (si todavía no tiene)."""
+    if db.query(Insumo).filter(Insumo.restaurante_id == restaurante_id).count() > 0:
+        return False
+    provs = {}
+    for nombre in PROVEEDORES:
+        p = Proveedor(nombre=nombre, restaurante_id=restaurante_id)
+        db.add(p)
+        db.flush()
+        provs[nombre] = p
+    for nombre, cat, stock, minimo, unidad, emoji, prov, costo in INSUMOS:
+        i = Insumo(nombre=nombre, categoria=cat, unidad=unidad, emoji=emoji,
+                   stock_actual=stock, stock_minimo=minimo, costo_unitario=costo,
+                   proveedor_id=provs[prov].id, restaurante_id=restaurante_id)
+        db.add(i)
+        db.flush()
+        if stock > 0:
+            db.add(MovimientoInventario(
+                insumo_id=i.id, tipo=TipoMovimiento.entrada, cantidad=stock,
+                motivo="Stock inicial (datos de ejemplo)",
+                stock_anterior=0, stock_resultante=stock,
+            ))
+    return True
+
+
 def seed():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        if db.query(Insumo).count() > 0:
-            print("Ya hay insumos, no se hace nada.")
+        restaurantes = db.query(Restaurante).order_by(Restaurante.id).all()
+        if not restaurantes:
+            print("No hay restaurantes todavía: crea uno y vuelve a ejecutar.")
             return
-        provs = {}
-        for nombre in PROVEEDORES:
-            p = db.query(Proveedor).filter(Proveedor.nombre == nombre).first()
-            if not p:
-                p = Proveedor(nombre=nombre)
-                db.add(p)
-                db.flush()
-            provs[nombre] = p
-        for nombre, cat, stock, minimo, unidad, emoji, prov, costo in INSUMOS:
-            i = Insumo(nombre=nombre, categoria=cat, unidad=unidad, emoji=emoji,
-                       stock_actual=stock, stock_minimo=minimo, costo_unitario=costo,
-                       proveedor_id=provs[prov].id)
-            db.add(i)
-            db.flush()
-            if stock > 0:
-                db.add(MovimientoInventario(
-                    insumo_id=i.id, tipo=TipoMovimiento.entrada, cantidad=stock,
-                    motivo="Stock inicial (datos de ejemplo)",
-                    stock_anterior=0, stock_resultante=stock,
-                ))
+        for r in restaurantes:
+            if seed_restaurante(db, r.id):
+                print(f"{r.nombre}: {len(PROVEEDORES)} proveedores y {len(INSUMOS)} insumos creados.")
+            else:
+                print(f"{r.nombre}: ya tiene inventario, no se hace nada.")
         db.commit()
-        print(f"Listo: {len(PROVEEDORES)} proveedores y {len(INSUMOS)} insumos creados.")
     finally:
         db.close()
 

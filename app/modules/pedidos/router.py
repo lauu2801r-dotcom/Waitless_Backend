@@ -50,8 +50,10 @@ def crear_pedido(
               "mensaje": f"Nuevo pedido #{pedido.id}"}
     manager.emitir("pedidos", evento)
     manager.emitir("dashboard", evento)
-    manager.emitir("mesas", {"tipo": "mesas_actualizadas", "mesa_id": pedido.mesa_id})
+    if pedido.mesa_id is not None:
+        manager.emitir("mesas", {"tipo": "mesas_actualizadas", "mesa_id": pedido.mesa_id})
     notificaciones.avisar_pedido_creado(db, pedido)
+    notificaciones.avisar_pedido_al_restaurante(db, pedido)
     auditoria.registrar(
         db, "pedido_creado", usuario_id=int(current_user["sub"]),
         email=current_user["email"], entidad="pedido", entidad_id=pedido.id,
@@ -118,7 +120,8 @@ def actualizar_pedido(
     manager.emitir("pedidos", evento)
     manager.emitir("dashboard", evento)
     manager.emitir(f"usuario:{pedido.usuario_id}", evento)
-    manager.emitir("mesas", {"tipo": "mesas_actualizadas", "mesa_id": pedido.mesa_id})
+    if pedido.mesa_id is not None:
+        manager.emitir("mesas", {"tipo": "mesas_actualizadas", "mesa_id": pedido.mesa_id})
     notificaciones.avisar_estado_pedido(db, pedido)
     auditoria.registrar(
         db, "pedido_estado_cambiado", usuario_id=int(current_user["sub"]),

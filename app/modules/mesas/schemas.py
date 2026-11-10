@@ -23,6 +23,8 @@ class MesaRespuesta(BaseModel):
     activa: bool
     creado_en: datetime
     restaurante_id: Optional[int] = None
+    minutos_ocupada: Optional[int] = None
+    alerta_tiempo: bool = False
 
     class Config:
         from_attributes = True

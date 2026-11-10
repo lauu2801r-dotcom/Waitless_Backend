@@ -78,10 +78,11 @@ def obtener_dashboard(db: Session, restaurante_id: Optional[int] = None):
                 "cantidad": it.cantidad,
                 "subtotal": it.subtotal,
             })
-        mesa = db.query(Mesa).filter(Mesa.id == p.mesa_id).first()
+        mesa = db.query(Mesa).filter(Mesa.id == p.mesa_id).first() if p.mesa_id else None
         pedidos_recientes.append({
             "id": p.id,
             "mesa_id": p.mesa_id,
+            "tipo_entrega": getattr(p.tipo_entrega, "value", p.tipo_entrega),
             "mesa_numero": mesa.numero if mesa else None,
             "total": p.total,
             "estado": p.estado.value,

@@ -33,7 +33,7 @@ python -m app.core.bi_vistas --rol-bi "UnaClaveSegura2026"
 | `bi_ia_predicciones` | Cada predicción de la IA y, si ya se cerró, su tiempo real y error | predicción |
 | `bi_ia_modelos` | Versiones del modelo, muestras, error y mejora | versión |
 | `bi_calificaciones` | Estrellas y comentarios por plato | calificación |
-| `bi_inventario` | Insumos, stock, mínimo y valor | insumo |
+| `bi_inventario` | Insumos, stock, mínimo y valor **de cada restaurante** (cada restaurante tiene su propio inventario) | insumo |
 
 Todas las vistas con datos de pedidos traen **`es_simulado`** (`True` = viene del historial
 de demostración `seed_historial`). Úsalo como filtro: así puedes mostrar solo datos reales
@@ -84,12 +84,12 @@ Selecciónala → Herramientas de tabla → **Marcar como tabla de fechas** (col
 | De (uno) | A (varios) |
 |---|---|
 | `Calendario[Date]` | `bi_pedidos[fecha]`, `bi_ventas[fecha]`, `bi_items_vendidos[fecha]`, `bi_ia_predicciones[fecha]`, `bi_calificaciones[fecha]` |
-| `bi_restaurantes[restaurante_id]` | `bi_pedidos[restaurante_id]`, `bi_ventas[restaurante_id]`, `bi_items_vendidos[restaurante_id]`, `bi_ia_predicciones[restaurante_id]`, `bi_calificaciones[restaurante_id]` |
+| `bi_restaurantes[restaurante_id]` | `bi_pedidos[restaurante_id]`, `bi_ventas[restaurante_id]`, `bi_items_vendidos[restaurante_id]`, `bi_ia_predicciones[restaurante_id]`, `bi_calificaciones[restaurante_id]`, `bi_inventario[restaurante_id]` |
 | `bi_ia_modelos[version]` | `bi_ia_predicciones[version_modelo]` |
 | `bi_productos[producto_id]` | `bi_items_vendidos[producto_id]` |
 
 **No** relaciones `bi_productos` con `bi_restaurantes` (crearía caminos duplicados).
-Con esto, un solo segmentador de **Restaurante** o de **Fecha** filtra todo el dashboard.
+Con esto, un solo segmentador de **Restaurante** o de **Fecha** filtra todo el dashboard. (`bi_inventario` solo se relaciona con el restaurante, no con la fecha: es el stock actual.)
 
 ---
 
@@ -251,7 +251,7 @@ repite el segmentador en la página.
 | Columnas | Eje `bi_calificaciones[estrellas]`, valores `Calificaciones` |
 | Barras (Top/Bottom 10) | Eje `bi_calificaciones[producto]`, valores `Calificación promedio` |
 | Tabla | `bi_calificaciones[producto]`, `estrellas`, `comentario`, `fecha` (solo con comentario) |
-| Tarjetas + tabla | `Insumos bajo el mínimo`, `Valor del inventario`; tabla de `bi_inventario` filtrada por `bajo_el_minimo = True` |
+| Tarjetas + tabla | `Insumos bajo el mínimo`, `Valor del inventario`; tabla de `bi_inventario` filtrada por `bajo_el_minimo = True`. El segmentador **Restaurante** filtra el inventario (cada restaurante tiene el suyo) |
 
 ---
 

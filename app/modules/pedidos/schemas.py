@@ -40,7 +40,7 @@ class ItemPedidoRespuesta(BaseModel):
 
 # ── SCHEMA DE CREACIÓN — con tipo_entrega ────────────────────
 class PedidoCrear(BaseModel):
-    mesa_id: int
+    mesa_id: Optional[int] = None   # obligatoria solo si es en restaurante
     reserva_id: Optional[int] = None
     items: List[ItemPedidoCrear]
     notas: Optional[str] = None
@@ -48,14 +48,23 @@ class PedidoCrear(BaseModel):
     # ── NUEVOS CAMPOS ──────────────────────────────────────
     tipo_entrega: TipoEntrega = TipoEntrega.restaurante
     direccion_domicilio: Optional[str] = None  # solo si tipo == domicilio
+    telefono_contacto: Optional[str] = None
+    indicaciones_domicilio: Optional[str] = None
 
     @model_validator(mode='after')
-    def validar_domicilio(self):
-        """Si el pedido es a domicilio, la dirección es obligatoria."""
-        if self.tipo_entrega == TipoEntrega.domicilio and not self.direccion_domicilio:
-            raise ValueError(
-                "La dirección de entrega es obligatoria para pedidos a domicilio."
-            )
+    def validar_entrega(self):
+        """En restaurante hace falta la mesa; a domicilio, dirección y teléfono."""
+        if self.tipo_entrega == TipoEntrega.domicilio:
+            direccion = (self.direccion_domicilio or "").strip()
+            if len(direccion) < 8:
+                raise ValueError("Escribe la dirección de entrega completa (calle, número, barrio).")
+            telefono = (self.telefono_contacto or "").strip()
+            if sum(c.isdigit() for c in telefono) < 7 or not all(c.isdigit() or c in "+ -()" for c in telefono):
+                raise ValueError("Escribe un teléfono de contacto válido para el domicilio.")
+            if len((self.indicaciones_domicilio or "")) > 200:
+                raise ValueError("Las indicaciones son muy largas (máximo 200 caracteres).")
+        elif self.mesa_id is None:
+            raise ValueError("Elige la mesa para pedir en el restaurante.")
         return self
 
 
@@ -71,7 +80,7 @@ class PedidoActualizar(BaseModel):
 class PedidoRespuesta(BaseModel):
     id: int
     usuario_id: int
-    mesa_id: int
+    mesa_id: Optional[int] = None
     reserva_id: Optional[int]
     estado: EstadoPedido
     notas: Optional[str]
@@ -86,6 +95,9 @@ class PedidoRespuesta(BaseModel):
     # ── NUEVOS CAMPOS ──────────────────────────────────────
     tipo_entrega: TipoEntrega
     direccion_domicilio: Optional[str]
+    telefono_contacto: Optional[str] = None
+    indicaciones_domicilio: Optional[str] = None
+    costo_envio: Optional[float] = 0.0
 
     class Config:
         from_attributes = True
@@ -93,6 +105,8 @@ class PedidoRespuesta(BaseModel):
 class PedidoEditarItems(BaseModel):
     items: List[ItemPedidoCrear]
     notas: Optional[str] = None
-    tipo_entrega: TipoEntrega = TipoEntrega.restaurante
+    tipo_entrega: Optional[TipoEntrega] = None   # se ignora: el tipo del pedido no cambia
     direccion_domicilio: Optional[str] = None
+    telefono_contacto: Optional[str] = None
+    indicaciones_domicilio: Optional[str] = None
 

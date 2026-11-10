@@ -14,7 +14,9 @@ from app.core.security import (
     verify_password,
 )
 from app.modules.auth.models import Restaurante, RolUsuario, Usuario
-from app.modules.auth.schemas import UsuarioLogin, UsuarioRegistro, VerificarOTP
+from app.modules.auth.schemas import (
+    RestablecerPassword, UsuarioLogin, UsuarioRegistro, VerificarOTP,
+)
 
 logger = logging.getLogger("waitless.auth")
 
@@ -28,6 +30,9 @@ POLITICA_VERSION = "1.0"
 
 MSG_OTP_INVALIDO = "Código inválido o expirado. Solicita uno nuevo"
 MSG_OTP_REENVIADO = "Si la cuenta existe y está pendiente de verificación, te enviamos un código"
+MSG_RECUPERAR_ENVIADO = "Si la cuenta existe, te enviamos un código para recuperar tu contraseña"
+MSG_RECUPERAR_INVALIDO = "Código inválido o expirado. Solicita uno nuevo"
+ESPERA_REENVIO_SEGUNDOS = 60   # mínimo entre un envío y el siguiente
 
 conf = ConnectionConfig(
     MAIL_USERNAME=settings.MAIL_USERNAME,
@@ -343,3 +348,99 @@ async def reenviar_otp(db: Session, email: str):
     await _enviar_otp_seguro(email_normalizado, otp)
 
     return {"message": MSG_OTP_REENVIADO}
+
+
+# ───────────────────────── Recuperar contraseña ─────────────────────────
+async def enviar_recuperacion_email(email: str, otp: str):
+    message = MessageSchema(
+        subject="WaitLess - Recupera tu contraseña",
+        recipients=[email],
+        body=f"""
+        <h2>Recuperar contraseña de WaitLess</h2>
+        <p>Usa este código para crear una nueva contraseña:</p>
+        <h1 style="color: #E8643C; letter-spacing: 8px;">{otp}</h1>
+        <p>Este código expira en 10 minutos.</p>
+        <p>Si no fuiste tú, ignora este mensaje: tu contraseña no cambiará.</p>
+        """,
+        subtype="html",
+    )
+    await FastMail(conf).send_message(message)
+
+
+async def solicitar_recuperacion(db: Session, email: str):
+    """
+    Envía un código de 6 dígitos al correo. Siempre responde lo mismo, exista o no
+    la cuenta, para no revelar qué correos están registrados.
+    Solo aplica a cuentas verificadas y activas (las demás deben verificar primero).
+    """
+    email_normalizado = email.lower().strip()
+    usuario = db.query(Usuario).filter(Usuario.email == email_normalizado).first()
+
+    if not usuario or not usuario.verificado or not usuario.activo:
+        return {"message": MSG_RECUPERAR_ENVIADO}
+
+    ahora = datetime.utcnow()
+    # Anti-spam: si ya se envió un código hace menos de 60 s, no se envía otro
+    if usuario.otp_code and usuario.otp_expira:
+        enviado_en = usuario.otp_expira - timedelta(minutes=10)
+        if (ahora - enviado_en).total_seconds() < ESPERA_REENVIO_SEGUNDOS:
+            return {"message": MSG_RECUPERAR_ENVIADO}
+
+    otp = generate_otp()
+    usuario.otp_code = otp
+    usuario.otp_expira = ahora + timedelta(minutes=10)
+    usuario.otp_intentos = 0
+    db.commit()
+
+    try:
+        await enviar_recuperacion_email(email_normalizado, otp)
+    except Exception as e:
+        logger.warning("No se pudo enviar el correo de recuperación a %s: %s", email_normalizado, e)
+
+    return {"message": MSG_RECUPERAR_ENVIADO}
+
+
+async def restablecer_password(db: Session, datos: RestablecerPassword):
+    email_normalizado = datos.email.lower().strip()
+    usuario = db.query(Usuario).filter(Usuario.email == email_normalizado).first()
+
+    invalido = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST, detail=MSG_RECUPERAR_INVALIDO,
+    )
+    if not usuario or not usuario.verificado or not usuario.activo:
+        raise invalido
+    if (
+        not usuario.otp_code
+        or usuario.otp_expira is None
+        or datetime.utcnow() > usuario.otp_expira
+    ):
+        raise invalido
+
+    if not hmac.compare_digest(usuario.otp_code.encode(), datos.otp.strip().encode()):
+        usuario.otp_intentos = (usuario.otp_intentos or 0) + 1
+        if usuario.otp_intentos >= MAX_INTENTOS_OTP:
+            usuario.otp_code = None
+            usuario.otp_expira = None
+            usuario.otp_intentos = 0
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Demasiados intentos. Solicita un código nuevo",
+            )
+        restantes = MAX_INTENTOS_OTP - usuario.otp_intentos
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Código incorrecto. Te quedan {restantes} intentos",
+        )
+
+    usuario.hashed_password = get_password_hash(datos.nueva_password)
+    usuario.otp_code = None
+    usuario.otp_expira = None
+    usuario.otp_intentos = 0
+    # Si estaba bloqueada por intentos fallidos, queda libre
+    usuario.login_intentos = 0
+    usuario.bloqueado_hasta = None
+    db.commit()
+    logger.info("Contraseña restablecida id=%s", usuario.id)
+    return {"message": "Contraseña actualizada. Ya puedes iniciar sesión"}

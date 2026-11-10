@@ -2,6 +2,7 @@ import enum
 
 from sqlalchemy import (
     Boolean, Column, DateTime, Enum, Float, ForeignKey, Integer, String, Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -15,11 +16,13 @@ class TipoMovimiento(str, enum.Enum):
 
 
 class Proveedor(Base):
-    """Quien nos vende los insumos (HU-015)."""
+    """Quien le vende los insumos a UN restaurante (HU-015)."""
     __tablename__ = "proveedores"
+    __table_args__ = (UniqueConstraint("restaurante_id", "nombre", name="uq_proveedor_restaurante_nombre"),)
 
     id = Column(Integer, primary_key=True, index=True)
-    nombre = Column(String(150), unique=True, nullable=False)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id"), nullable=True, index=True)
+    nombre = Column(String(150), nullable=False)
     contacto = Column(String(150), nullable=True)
     telefono = Column(String(30), nullable=True)
     email = Column(String(150), nullable=True)
@@ -33,11 +36,13 @@ class Proveedor(Base):
 
 
 class Insumo(Base):
-    """Ingrediente, bebida o material que el restaurante guarda en bodega (HU-014)."""
+    """Ingrediente, bebida o material que UN restaurante guarda en bodega (HU-014)."""
     __tablename__ = "insumos"
+    __table_args__ = (UniqueConstraint("restaurante_id", "nombre", name="uq_insumo_restaurante_nombre"),)
 
     id = Column(Integer, primary_key=True, index=True)
-    nombre = Column(String(150), unique=True, nullable=False)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id"), nullable=True, index=True)
+    nombre = Column(String(150), nullable=False)
     categoria = Column(String(100), nullable=False, default="Ingredientes")
     unidad = Column(String(30), nullable=False, default="unidades")
     emoji = Column(String(10), nullable=True)
