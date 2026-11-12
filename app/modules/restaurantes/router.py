@@ -43,7 +43,7 @@ def _armar(db: Session, r: Restaurante) -> RestauranteRespuesta:
         pedido_minimo_domicilio=r.pedido_minimo_domicilio or 0,
         calificacion_promedio=prom, total_calificaciones=n_cal,
         id=r.id, nombre=r.nombre, descripcion=r.descripcion, tipo_cocina=r.tipo_cocina,
-        emoji=r.emoji, activo=bool(r.activo), total_platos=len(productos), mesas_libres=libres,
+        emoji=r.emoji, imagen_url=r.imagen_url, activo=bool(r.activo), total_platos=len(productos), mesas_libres=libres,
         categorias=sorted({p.categoria for p in productos if p.categoria}),
     )
 

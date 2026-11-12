@@ -49,6 +49,7 @@ COLUMNAS_NUEVAS = [
     ("mesas", "alerta_tiempo_enviada", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("restaurantes", "minutos_alerta_mesa", "INTEGER"),
     # ── Domicilio: configuración del restaurante y datos del pedido ──
+    ("restaurantes", "imagen_url", "VARCHAR(255)"),
     ("restaurantes", "domicilio_activo", "BOOLEAN"),
     ("restaurantes", "costo_domicilio", "INTEGER"),
     ("restaurantes", "pedido_minimo_domicilio", "INTEGER"),

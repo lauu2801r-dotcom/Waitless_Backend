@@ -1,7 +1,10 @@
 import asyncio
+import os
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from app.core.database import Base, engine
 from app.modules.auth.router import router as auth_router
 from app.modules.mesas.router import router as mesas_router
@@ -48,6 +51,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Imágenes fijas de platos y restaurantes: carpeta "static" en la raíz del backend.
+_STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+os.makedirs(_STATIC_DIR / "imagenes" / "platos", exist_ok=True)
+os.makedirs(_STATIC_DIR / "imagenes" / "restaurantes", exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 app.include_router(auth_router,     prefix="/auth",      tags=["Autenticación"])
 app.include_router(mesas_router,    prefix="/mesas",     tags=["Mesas"])

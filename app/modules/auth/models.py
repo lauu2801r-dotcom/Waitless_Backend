@@ -65,6 +65,7 @@ class Restaurante(Base):
     instagram         = Column(String(100), nullable=True)
     horarios          = Column(Text, nullable=True)   # JSON: {"semana": {...}, "especiales": [...]}
     galeria           = Column(Text, nullable=True)   # JSON: lista de URLs de imágenes
+    imagen_url        = Column(String(255), nullable=True)   # foto principal (ruta /static/... o enlace)
     domicilio_activo  = Column(Boolean, nullable=True)    # None = activo (por defecto)
     costo_domicilio   = Column(Integer, nullable=True)    # None = 5000
     pedido_minimo_domicilio = Column(Integer, nullable=True)  # None = sin mínimo

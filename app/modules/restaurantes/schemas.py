@@ -11,6 +11,7 @@ class RestauranteRespuesta(BaseModel):
     descripcion: Optional[str] = None
     tipo_cocina: Optional[str] = None
     emoji: Optional[str] = None
+    imagen_url: Optional[str] = None
     activo: bool = True
     total_platos: int = 0
     mesas_libres: int = 0
