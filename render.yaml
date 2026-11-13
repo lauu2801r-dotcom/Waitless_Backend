@@ -1,0 +1,30 @@
+# Blueprint de Render: crea el servicio web del backend desde este repositorio.
+# Los valores secretos se escriben en el panel de Render (sync: false), nunca aquí.
+services:
+  - type: web
+    name: waitless-api
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "1440"
+      - key: MAIL_SERVER
+        value: smtp.gmail.com
+      - key: MAIL_PORT
+        value: "587"
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: MAIL_USERNAME
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: CODIGO_NEGOCIO
+        sync: false
