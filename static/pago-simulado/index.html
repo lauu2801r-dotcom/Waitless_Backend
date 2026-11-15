@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b3d4a">
+  <title>WaitLess Pay · Pago seguro</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <div class="sim-banner" role="note">
+    <span class="sim-dot"></span>
+    <strong>Entorno de pruebas</strong> · Pago simulado, no se realiza ningún cobro real. No ingreses datos reales.
+  </div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path d="M5 12.5l4.2 4.2L19 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span class="brand-name">WaitLess <b>Pay</b></span>
+    </div>
+    <div class="secure">
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 2l8 3v6c0 5-3.4 9.3-8 11-4.6-1.7-8-6-8-11V5l8-3z" fill="currentColor" opacity=".18"/><path d="M8.5 12.2l2.5 2.5 4.6-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Conexión segura
+    </div>
+  </header>
+
+  <main class="layout">
+
+    <section class="panel" id="panel" aria-live="polite">
+
+      <ol class="stepper" id="stepper" aria-label="Progreso del pago">
+        <li data-step="1"><span>1</span><em>Método</em></li>
+        <li data-step="2"><span>2</span><em>Datos</em></li>
+        <li data-step="3"><span>3</span><em>Verificación</em></li>
+        <li data-step="4"><span>4</span><em>Resultado</em></li>
+      </ol>
+
+      <!-- 1. MÉTODO -->
+      <div class="view" id="view-method">
+        <h1>¿Cómo quieres pagar?</h1>
+        <p class="lead">Elige un método de pago. Todo es una simulación para la demostración de WaitLess.</p>
+
+        <div class="methods">
+          <button class="method" data-method="card" type="button">
+            <span class="m-ico m-card"><svg viewBox="0 0 24 24" width="24" height="24"><rect x="2.5" y="5" width="19" height="14" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M2.5 9.5h19" stroke="currentColor" stroke-width="1.8"/><rect x="5.5" y="13.5" width="5" height="2" rx="1" fill="currentColor"/></svg></span>
+            <span class="m-txt"><strong>Tarjeta crédito o débito</strong><small>Visa, Mastercard o Amex · hasta 12 cuotas</small></span>
+            <span class="m-arrow">›</span>
+          </button>
+          <button class="method" data-method="bank" type="button">
+            <span class="m-ico m-bank"><svg viewBox="0 0 24 24" width="24" height="24"><path d="M3 9.5L12 4l9 5.5M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <span class="m-txt"><strong>Transferencia bancaria</strong><small>Paga desde tu cuenta de ahorros o corriente</small></span>
+            <span class="m-arrow">›</span>
+          </button>
+          <button class="method" data-method="wallet" type="button">
+            <span class="m-ico m-wallet"><svg viewBox="0 0 24 24" width="24" height="24"><path d="M4 7.5A2.5 2.5 0 016.5 5H18v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><rect x="3" y="7.5" width="18" height="12" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="16.5" cy="13.5" r="1.3" fill="currentColor"/></svg></span>
+            <span class="m-txt"><strong>Billetera digital</strong><small>Paga con tu número de celular</small></span>
+            <span class="m-arrow">›</span>
+          </button>
+        </div>
+
+        <button class="link-cancel" id="btnCancelar" type="button">Cancelar y volver a WaitLess</button>
+      </div>
+
+      <!-- 2A. TARJETA -->
+      <div class="view hidden" id="view-card">
+        <button class="btn-back" data-back type="button">‹ Cambiar método</button>
+        <h1>Datos de la tarjeta</h1>
+
+        <div class="card-wrap">
+          <div class="card3d" id="card3d">
+            <div class="face front">
+              <div class="c-top"><span class="chip"></span><span class="c-brand" id="pvBrand"></span></div>
+              <div class="c-num" id="pvNum">•••• •••• •••• ••••</div>
+              <div class="c-bottom">
+                <div><small>Titular</small><span id="pvName">NOMBRE APELLIDO</span></div>
+                <div><small>Vence</small><span id="pvExp">MM/AA</span></div>
+              </div>
+            </div>
+            <div class="face back">
+              <div class="c-strip"></div>
+              <div class="c-sign"><span>Firma</span><b id="pvCvv">•••</b></div>
+              <p>Tarjeta de demostración · WaitLess Pay</p>
+            </div>
+          </div>
+        </div>
+
+        <form id="formCard" novalidate autocomplete="off">
+          <div class="field">
+            <label for="cNum">Número de tarjeta</label>
+            <input id="cNum" inputmode="numeric" placeholder="1234 1234 1234 1234" maxlength="19" autocomplete="off">
+            <small class="err" data-err="cNum"></small>
+          </div>
+          <div class="field">
+            <label for="cName">Nombre del titular</label>
+            <input id="cName" placeholder="Como aparece en la tarjeta" maxlength="26" autocomplete="off">
+            <small class="err" data-err="cName"></small>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="cExp">Vencimiento</label>
+              <input id="cExp" inputmode="numeric" placeholder="MM/AA" maxlength="5" autocomplete="off">
+              <small class="err" data-err="cExp"></small>
+            </div>
+            <div class="field">
+              <label for="cCvv">CVV</label>
+              <input id="cCvv" inputmode="numeric" placeholder="123" maxlength="4" type="password" autocomplete="off">
+              <small class="err" data-err="cCvv"></small>
+            </div>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="cDocT">Documento</label>
+              <select id="cDocT"><option>CC</option><option>CE</option><option>Pasaporte</option></select>
+            </div>
+            <div class="field">
+              <label for="cDoc">Número</label>
+              <input id="cDoc" inputmode="numeric" placeholder="1012345678" maxlength="10" autocomplete="off">
+              <small class="err" data-err="cDoc"></small>
+            </div>
+          </div>
+          <div class="field">
+            <label for="cCuotas">Cuotas</label>
+            <select id="cCuotas"></select>
+          </div>
+
+          <div class="hint-box">
+            <b>Tarjetas de prueba</b>
+            <ul>
+              <li><button type="button" class="chipbtn" data-fill="4242424242424242">4242 4242 4242 4242</button> aprobada</li>
+              <li><button type="button" class="chipbtn" data-fill="4000000000000002">4000 0000 0000 0002</button> rechazada</li>
+              <li><button type="button" class="chipbtn" data-fill="4000000000009995">4000 0000 0000 9995</button> fondos insuficientes</li>
+            </ul>
+            <small>Usa cualquier fecha futura y cualquier CVV.</small>
+          </div>
+
+          <button class="btn-primary" id="btnPagarCard" type="submit">Continuar</button>
+        </form>
+      </div>
+
+      <!-- 2B. BANCO -->
+      <div class="view hidden" id="view-bank">
+        <button class="btn-back" data-back type="button">‹ Cambiar método</button>
+        <h1>Transferencia bancaria</h1>
+        <p class="lead">Selecciona tu banco para autorizar el pago.</p>
+        <form id="formBank" novalidate>
+          <div class="banks" id="banksList" role="radiogroup" aria-label="Banco"></div>
+          <small class="err" data-err="bank"></small>
+          <div class="row2">
+            <div class="field">
+              <label for="bDoc">Documento del titular</label>
+              <input id="bDoc" inputmode="numeric" placeholder="1012345678" maxlength="10" autocomplete="off">
+              <small class="err" data-err="bDoc"></small>
+            </div>
+            <div class="field">
+              <label for="bClave">Clave del portal</label>
+              <input id="bClave" type="password" inputmode="numeric" placeholder="••••" maxlength="8" autocomplete="off">
+              <small class="err" data-err="bClave"></small>
+            </div>
+          </div>
+          <div class="hint-box"><small>Demostración: cualquier documento y clave funcionan. Con la clave <b>0000</b> el banco rechaza el pago.</small></div>
+          <button class="btn-primary" type="submit">Ir a mi banco</button>
+        </form>
+      </div>
+
+      <!-- 2B-2. APROBACIÓN BANCO -->
+      <div class="view hidden" id="view-bankapprove">
+        <div class="bank-head" id="bankHead"></div>
+        <h1>Autoriza el pago</h1>
+        <p class="lead">Revisa los datos de la transferencia y confirma desde tu banco.</p>
+        <dl class="kv" id="bankKv"></dl>
+        <button class="btn-primary" id="btnBankOk" type="button">Autorizar pago</button>
+        <button class="btn-ghost" id="btnBankNo" type="button">Rechazar</button>
+      </div>
+
+      <!-- 2C. BILLETERA -->
+      <div class="view hidden" id="view-wallet">
+        <button class="btn-back" data-back type="button">‹ Cambiar método</button>
+        <h1>Billetera digital</h1>
+        <p class="lead">Te enviaremos un código de verificación al celular registrado.</p>
+        <form id="formWallet" novalidate autocomplete="off">
+          <div class="field">
+            <label for="wTel">Número de celular</label>
+            <div class="prefix"><span>+57</span><input id="wTel" inputmode="numeric" placeholder="300 123 4567" maxlength="12" autocomplete="off"></div>
+            <small class="err" data-err="wTel"></small>
+          </div>
+          <div class="hint-box"><small>Demostración: usa cualquier celular que empiece por 3. Si termina en <b>0000</b> la billetera no tiene saldo.</small></div>
+          <button class="btn-primary" type="submit">Enviar código</button>
+        </form>
+      </div>
+
+      <!-- 3. OTP -->
+      <div class="view hidden" id="view-otp">
+        <button class="btn-back" data-back type="button">‹ Volver</button>
+        <div class="otp-ico">
+          <svg viewBox="0 0 24 24" width="30" height="30"><rect x="6" y="2.5" width="12" height="19" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10 18.5h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </div>
+        <h1>Verifica tu identidad</h1>
+        <p class="lead" id="otpLead">Ingresa el código de 6 dígitos que enviamos a tu celular.</p>
+        <div class="otp" id="otpBoxes">
+          <input inputmode="numeric" maxlength="1" aria-label="Dígito 1" autocomplete="one-time-code">
+          <input inputmode="numeric" maxlength="1" aria-label="Dígito 2">
+          <input inputmode="numeric" maxlength="1" aria-label="Dígito 3">
+          <input inputmode="numeric" maxlength="1" aria-label="Dígito 4">
+          <input inputmode="numeric" maxlength="1" aria-label="Dígito 5">
+          <input inputmode="numeric" maxlength="1" aria-label="Dígito 6">
+        </div>
+        <small class="err center" id="otpErr"></small>
+        <button class="btn-primary" id="btnOtp" type="button">Verificar y pagar</button>
+        <p class="resend">¿No te llegó? <button class="linkbtn" id="btnResend" type="button" disabled>Reenviar código <span id="resendT"></span></button></p>
+      </div>
+
+      <!-- 4. PROCESANDO -->
+      <div class="view hidden" id="view-processing">
+        <div class="spinner" aria-hidden="true"></div>
+        <h1 class="center">Procesando tu pago…</h1>
+        <p class="lead center">No cierres ni recargues esta ventana.</p>
+        <ul class="proc" id="procList">
+          <li>Validando los datos</li>
+          <li>Conectando con la entidad</li>
+          <li>Autorizando la transacción</li>
+          <li>Confirmando con el restaurante</li>
+        </ul>
+      </div>
+
+      <!-- 5. RESULTADO -->
+      <div class="view hidden" id="view-result">
+        <div id="resultBody"></div>
+      </div>
+
+    </section>
+
+    <aside class="summary" aria-label="Resumen del pedido">
+      <button class="sum-toggle" id="sumToggle" type="button" aria-expanded="false">
+        <span>Resumen del pedido</span>
+        <b id="sumTotalMini"></b>
+        <i>⌄</i>
+      </button>
+      <div class="sum-body" id="sumBody">
+        <div class="sum-rest">
+          <span class="sum-avatar" id="sumAvatar">R</span>
+          <div><small>Pagas a</small><strong id="sumRest"></strong></div>
+        </div>
+        <dl class="kv">
+          <div><dt>Pedido</dt><dd id="sumPedido"></dd></div>
+          <div><dt>Concepto</dt><dd id="sumTipo"></dd></div>
+          <div><dt>Subtotal</dt><dd id="sumSub"></dd></div>
+          <div><dt>Comisión de pago</dt><dd>$0</dd></div>
+        </dl>
+        <div class="sum-total"><span>Total a pagar</span><b id="sumTotal"></b></div>
+        <p class="sum-note">
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><rect x="5" y="10.5" width="14" height="9.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 10.5V8a3.5 3.5 0 017 0v2.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+          Tus datos no se guardan ni se envían a ningún servidor.
+        </p>
+      </div>
+    </aside>
+
+  </main>
+
+  <footer class="foot">
+    <span>WaitLess Pay · Simulador académico</span>
+    <span>Proyecto de grado · Universidad Manuela Beltrán</span>
+  </footer>
+
+  <div class="sms" id="sms" role="status" aria-live="polite">
+    <div class="sms-ico">✉</div>
+    <div class="sms-txt">
+      <small>Mensajes · ahora</small>
+      <p id="smsText"></p>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/validators.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
