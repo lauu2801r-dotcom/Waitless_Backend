@@ -97,6 +97,8 @@ def pagar(db: Session, datos: PagoCrear, usuario_id: int, email: str, rol: str):
     total = round(subtotal + impuesto + datos.propina, 2)
 
     aprobado, referencia, motivo = _pasarela_simulada(datos.metodo, datos.simular_rechazo)
+    if aprobado and datos.referencia:
+        referencia = datos.referencia  # la que mostró el portal de pago
     pago = Pago(
         pedido_id=pedido.id, metodo=datos.metodo, monto=total,
         estado=EstadoPago.aprobado if aprobado else EstadoPago.rechazado,
@@ -140,7 +142,50 @@ def pagar(db: Session, datos: PagoCrear, usuario_id: int, email: str, rol: str):
     return pago, factura
 
 
+def registrar_rechazo(db: Session, datos, usuario_id: int, email: str, rol: str) -> Pago:
+    """Deja registrado un intento que el portal de pago rechazó (no genera factura)."""
+    pedido = (
+        db.query(Pedido)
+        .options(joinedload(Pedido.items))
+        .filter(Pedido.id == datos.pedido_id)
+        .first()
+    )
+    if not pedido:
+        raise _error(404, "Pedido no encontrado")
+    es_personal = rol in ("administrador", "empleado")
+    if not es_personal and pedido.usuario_id != usuario_id:
+        raise _error(403, "No tienes permiso sobre este pedido")
+    if pedido_pagado(db, pedido.id):
+        raise _error(400, "Este pedido ya está pagado")
+
+    subtotal = round(pedido.total, 2)
+    total = round(subtotal + _impuesto(subtotal) + datos.propina, 2)
+    pago = Pago(
+        pedido_id=pedido.id, metodo=datos.metodo, monto=total,
+        estado=EstadoPago.rechazado,
+        referencia=datos.referencia, motivo_rechazo=datos.motivo or "Pago rechazado en el portal",
+        usuario_id=usuario_id, usuario_email=email,
+    )
+    db.add(pago)
+    db.commit()
+    db.refresh(pago)
+    return pago
+
+
 # ───────────────────────── Consultas ─────────────────────────
+def mis_pagos(db: Session, usuario_id: int, limit: int = 100) -> List[Pago]:
+    """Todos los intentos de pago de un cliente (aprobados y rechazados), del más reciente al más antiguo."""
+    pagos = (
+        db.query(Pago).filter(Pago.usuario_id == usuario_id)
+        .order_by(Pago.id.desc()).limit(limit).all()
+    )
+    ids = [p.factura_id for p in pagos if p.factura_id]
+    facturas = {f.id: f for f in db.query(Factura).filter(Factura.id.in_(ids)).all()} if ids else {}
+    for p in pagos:
+        p.factura = facturas.get(p.factura_id)
+    return pagos
+
+
 def listar_facturas(
     db: Session,
     usuario_id: Optional[int] = None,

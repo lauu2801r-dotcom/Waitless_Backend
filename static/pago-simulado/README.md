@@ -27,9 +27,10 @@ pago-simulado/
 | `pedido` | `WL-1042` | Referencia del pedido |
 | `tipo` | `pedido`, `domicilio`, `reserva` | Texto del concepto |
 | `retorno` | `https://…` o `waitless://pago` | A dónde vuelve al terminar |
+| `sesion` | `600` | Segundos que dura la sesión de pago (por defecto 10 min). Para probar: `?sesion=10` |
 
 Al terminar redirige a `retorno` agregando `estado` (`aprobado`, `rechazado`, `cancelado`),
-`ref`, `metodo`, `monto` y `pedido`. También envía ese mismo resultado como JSON al canal
+`ref`, `metodo`, `monto`, `pedido` y, si no se aprobó, `motivo` y `motivo_texto`. También envía ese mismo resultado como JSON al canal
 JavaScript `WaitLessPay` (webview_flutter) y por `postMessage`.
 
 ## Datos de prueba

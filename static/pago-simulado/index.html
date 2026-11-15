@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0b3d4a">
   <title>WaitLess Pay · Pago seguro</title>
-  <link rel="stylesheet" href="css/styles.css?v=3">
+  <link rel="stylesheet" href="css/styles.css?v=4">
 </head>
 <body>
 
@@ -37,6 +37,11 @@
         <li data-step="3"><span>3</span><em>Verificación</em></li>
         <li data-step="4"><span>4</span><em>Resultado</em></li>
       </ol>
+
+      <div class="session" id="session" role="timer" aria-live="off">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="13" r="8" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M12 9v4l2.5 2M9.5 2.5h5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Tu sesión de pago expira en <b id="sessionT">10:00</b>
+      </div>
 
       <!-- 1. MÉTODO -->
       <div class="view" id="view-method">
@@ -246,7 +251,7 @@
   </main>
 
   <footer class="foot">
-    <span>WaitLess Pay · Simulador académico · v3</span>
+    <span>WaitLess Pay · Simulador académico · v4</span>
     <span>Proyecto de grado · Universidad Manuela Beltrán</span>
   </footer>
 
@@ -258,8 +263,8 @@
     </div>
   </div>
 
-  <script src="js/config.js?v=3"></script>
-  <script src="js/validators.js?v=3"></script>
-  <script src="js/app.js?v=3"></script>
+  <script src="js/config.js?v=4"></script>
+  <script src="js/validators.js?v=4"></script>
+  <script src="js/app.js?v=4"></script>
 </body>
 </html>

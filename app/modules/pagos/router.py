@@ -11,7 +11,7 @@ from app.modules.pagos import service
 from app.modules.notificaciones import service as notificaciones
 from app.modules.pagos.models import EstadoFactura, MetodoPago
 from app.modules.pagos.schemas import (
-    AnularFactura, FacturaDetalle, FacturaResumen, PagoCrear, PagoRespuesta,
+    AnularFactura, FacturaDetalle, FacturaResumen, PagoCrear, PagoRechazoCrear, PagoRespuesta,
     PedidoPorCobrar, ResumenVentas,
 )
 from app.websocket.manager import manager
@@ -54,6 +54,39 @@ def pagar(
     if factura is not None:
         respuesta.factura = FacturaResumen.model_validate(factura)
     return respuesta
+
+
+@router.post("/rechazo", response_model=PagoRespuesta)
+def registrar_rechazo(
+    datos: PagoRechazoCrear, request: Request,
+    db: Session = Depends(get_db), current_user: dict = Depends(get_current_user),
+):
+    """Registra un intento de pago que el portal rechazó (queda en el historial, sin factura)."""
+    uid, email = int(current_user["sub"]), current_user["email"]
+    pago = service.registrar_rechazo(db, datos, uid, email, current_user["rol"])
+    auditoria.registrar(
+        db, "pago_rechazado", usuario_id=uid, email=email,
+        entidad="pedido", entidad_id=pago.pedido_id,
+        detalle=f"{pago.metodo.value} ${pago.monto:,.0f} · {pago.motivo_rechazo}",
+        ip=auditoria.ip_de(request),
+    )
+    return PagoRespuesta.model_validate(pago)
+
+
+@router.get("/mis-pagos", response_model=List[PagoRespuesta])
+def mis_pagos(
+    db: Session = Depends(get_db), current_user: dict = Depends(get_current_user),
+):
+    """Historial de intentos de pago del cliente (aprobados y rechazados)."""
+    uid = int(current_user["sub"])
+    pagos = service.mis_pagos(db, uid)
+    salida = []
+    for p in pagos:
+        r = PagoRespuesta.model_validate(p)
+        if getattr(p, "factura", None) is not None:
+            r.factura = FacturaResumen.model_validate(p.factura)
+        salida.append(r)
+    return salida
 
 
 @router.get("/mis-facturas", response_model=List[FacturaResumen])

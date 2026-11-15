@@ -6,6 +6,7 @@ WL.CONFIG = {
   otpCorrecto: "123456",
   intentosOtp: 3,
   segundosReenvio: 30,
+  segundosSesion: 600,          // la sesión de pago dura 10 minutos (se puede cambiar con ?sesion=SEGUNDOS)
 
   // Valores por defecto si la app no manda parámetros en la URL
   demo: { monto: 48500, restaurante: "Casa Solera", pedido: "WL-1042" },
@@ -39,6 +40,7 @@ WL.CONFIG = {
     vencida:   { titulo: "Tarjeta vencida", detalle: "La tarjeta ingresada ya expiró. Usa una tarjeta vigente." },
     otp:       { titulo: "Verificación fallida", detalle: "Superaste el número de intentos del código de seguridad." },
     banco:     { titulo: "Pago no autorizado", detalle: "Tu banco rechazó la autorización de este pago." },
+    expirada:  { titulo: "Sesión expirada", detalle: "Pasó el tiempo permitido sin completar el pago. No se realizó ningún cobro." },
     cancelado: { titulo: "Pago cancelado", detalle: "Cancelaste la operación. No se realizó ningún cobro." }
   }
 };

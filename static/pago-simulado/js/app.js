@@ -15,12 +15,13 @@
     restaurante: (qs.get("restaurante") || C.demo.restaurante).slice(0, 60),
     pedido: (qs.get("pedido") || C.demo.pedido).slice(0, 30),
     tipo: (qs.get("tipo") || "pedido").toLowerCase(),
-    retorno: /^(https?:|waitless:)/i.test(retornoRaw) ? retornoRaw : ""
+    retorno: /^(https?:|waitless:)/i.test(retornoRaw) ? retornoRaw : "",
+    sesion: Math.min(3600, Math.max(5, parseInt(qs.get("sesion"), 10) || C.segundosSesion))
   };
   const tipoTexto = { pedido: "Pedido en restaurante", domicilio: "Pedido a domicilio", reserva: "Reserva de mesa" };
 
   /* ---------- Estado (solo en memoria; nada se guarda) ---------- */
-  const state = { method: null, card: null, bank: null, otpFails: 0, result: null, timers: [] };
+  const state = { method: null, card: null, bank: null, otpFails: 0, result: null, timers: [], enProceso: false, sesionRestante: 0, sesionTimer: null };
 
   /* ---------- Navegación entre vistas ---------- */
   // credit / debit comparten el formulario de tarjeta; pse usa el de banco
@@ -327,6 +328,7 @@
   /* ---------- 4. Procesando ---------- */
   function procesar(resultado, rapido) {
     clearTimers();
+    state.enProceso = true;
     if (rapido) { terminar(resultado); return; }
     show("processing");
     const items = $$("#procList li");
@@ -371,6 +373,9 @@
   }
 
   function terminar(r) {
+    state.enProceso = false;
+    detenerSesion();
+    $("#session").classList.add("off");
     const body = $("#resultBody");
     body.innerHTML = "";
     const ahora = new Date();
@@ -419,8 +424,8 @@
       show("result");
     } else {
       const m = C.motivos[r.motivo] || C.motivos.declinada;
-      const cancel = r.motivo === "cancelado";
-      state.result = { estado: cancel ? "cancelado" : "rechazado", motivo: r.motivo };
+      const cancel = r.motivo === "cancelado" || r.motivo === "expirada";
+      state.result = { estado: cancel ? "cancelado" : "rechazado", motivo: r.motivo, motivoTexto: m.titulo, ref: V.referencia() };
       body.innerHTML =
         '<div class="res-ico bad">' + SVG_BAD + "</div>" +
         '<h1 class="res-title"></h1><p class="res-sub"></p>' +
@@ -448,6 +453,7 @@
     $("#card3d").classList.remove("visa", "mastercard", "amex", "flip");
     $("#pvBrand").textContent = "";
     show("method");
+    iniciarSesion();
   }
 
   /* ---------- Regreso a la app ---------- */
@@ -459,6 +465,8 @@
       metodo: state.method || "",
       monto: params.monto,
       pedido: params.pedido,
+      motivo: r.motivo || "",
+      motivo_texto: r.motivoTexto || "",
       simulado: true
     };
     const json = JSON.stringify(payload);
@@ -502,6 +510,38 @@
     $("#sms").classList.remove("show");
   }
 
+  /* ---------- Sesión de pago (cuenta regresiva) ---------- */
+  function pintarSesion() {
+    const t = state.sesionRestante;
+    const mm = String(Math.floor(t / 60)).padStart(2, "0");
+    const ss = String(t % 60).padStart(2, "0");
+    $("#sessionT").textContent = mm + ":" + ss;
+    const el = $("#session");
+    el.classList.toggle("low", t <= 120 && t > 60);
+    el.classList.toggle("crit", t <= 60);
+  }
+  function iniciarSesion() {
+    detenerSesion();
+    state.sesionRestante = params.sesion;
+    $("#session").classList.remove("off");
+    pintarSesion();
+    state.sesionTimer = setInterval(() => {
+      if (state.enProceso) return;          // no se vence mientras se procesa el pago
+      state.sesionRestante--;
+      pintarSesion();
+      if (state.sesionRestante <= 0) {
+        detenerSesion();
+        clearTimers();
+        clearInterval(resendInterval);
+        terminar({ ok: false, motivo: "expirada" });
+      }
+    }, 1000);
+  }
+  function detenerSesion() {
+    clearInterval(state.sesionTimer);
+    state.sesionTimer = null;
+  }
+
   /* ---------- Inicio ---------- */
   pintarResumen();
   initMetodos();
@@ -509,4 +549,5 @@
   initBanco();
   initOtp();
   show("method");
+  iniciarSesion();
 })();

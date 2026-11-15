@@ -93,6 +93,17 @@ input,select{font:inherit;color:inherit}
 .stepper li.active em{color:var(--ink);font-weight:600}
 .stepper.fail li.active span{border-color:var(--bad);color:var(--bad);box-shadow:0 0 0 4px var(--bad-l)}
 
+/* Sesión de pago (cuenta regresiva) */
+.session{
+  display:flex;align-items:center;justify-content:center;gap:7px;margin:-10px auto 22px;width:max-content;max-width:100%;
+  padding:7px 14px;border-radius:999px;background:var(--brand-l);color:var(--brand-d);font-size:13px;transition:.3s;
+}
+.session b{font-variant-numeric:tabular-nums;font-size:14px}
+.session.low{background:#fff1d6;color:#8a5a00}
+.session.crit{background:var(--bad-l);color:var(--bad);animation:pulse2 1s infinite}
+.session.off{display:none}
+@keyframes pulse2{50%{opacity:.65}}
+
 /* Tipografía de vistas */
 .view{animation:rise .35s ease both}
 @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
