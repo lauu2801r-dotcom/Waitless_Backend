@@ -20,11 +20,13 @@
   const tipoTexto = { pedido: "Pedido en restaurante", domicilio: "Pedido a domicilio", reserva: "Reserva de mesa" };
 
   /* ---------- Estado (solo en memoria; nada se guarda) ---------- */
-  const state = { method: null, card: null, bank: null, wallet: null, otpFails: 0, result: null, timers: [] };
+  const state = { method: null, card: null, bank: null, otpFails: 0, result: null, timers: [] };
 
   /* ---------- Navegación entre vistas ---------- */
+  // credit / debit comparten el formulario de tarjeta; pse usa el de banco
+  const vistaDe = { credit: "card", debit: "card", pse: "bank" };
   const stepOf = {
-    method: 1, card: 2, bank: 2, wallet: 2,
+    method: 1, card: 2, bank: 2,
     bankapprove: 3, otp: 3, processing: 3, result: 4
   };
 
@@ -77,13 +79,33 @@
   function initMetodos() {
     $$(".method").forEach(b => b.addEventListener("click", () => {
       state.method = b.dataset.method;
-      show(state.method);
+      configurarTarjeta();
+      show(vistaDe[state.method]);
     }));
-    $$("[data-back]").forEach(b => b.addEventListener("click", () => {
-      clearTimers();
-      show(state.method && !$("#view-otp").classList.contains("hidden") ? state.method : "method");
-    }));
+    $$("[data-back]").forEach(b => b.addEventListener("click", atras));
     $("#btnCancelar").addEventListener("click", () => volver("cancelado"));
+  }
+
+  /* ---------- Volver un paso (botones, y botón "atrás" de la app) ---------- */
+  function vistaActual() {
+    const v = $$(".view").find(x => !x.classList.contains("hidden"));
+    return v ? v.id.replace("view-", "") : "method";
+  }
+  function atras() {
+    const v = vistaActual();
+    if (v === "card" || v === "bank") { clearTimers(); show("method"); return true; }
+    if (v === "bankapprove") { show("bank"); return true; }
+    if (v === "otp") { clearTimers(); show("card"); return true; }
+    return false; // método, procesando y resultado: la app decide
+  }
+  // La app (Flutter) llama a esto con el botón "atrás" del celular
+  window.WL_atras = atras;
+
+  function configurarTarjeta() {
+    const esCredito = state.method === "credit";
+    $("#cardTitle").textContent = esCredito ? "Datos de la tarjeta de crédito" : "Datos de la tarjeta débito";
+    $("#rowCuotas").classList.toggle("hidden", !esCredito);
+    $("#cCuotas").value = "1";
   }
 
   /* ---------- 2A. Tarjeta ---------- */
@@ -153,24 +175,27 @@
       if (cvv.value.length !== cvv.maxLength) { setErr("cCvv", "CVV de " + cvv.maxLength + " dígitos."); mark(cvv, true); ok = false; }
       if (doc.value.length < 6) { setErr("cDoc", "Documento no válido."); mark(doc, true); ok = false; }
       if (!ok) return;
-      state.card = { digits, cuotas: +$("#cCuotas").value, marca: V.marca(digits) };
+      state.card = { digits, cuotas: state.method === "credit" ? +$("#cCuotas").value : 1, marca: V.marca(digits) };
       abrirOtp("Ingresa el código de 6 dígitos que enviamos al celular asociado a tu tarjeta " + V.enmascarar(digits) + ".");
     });
   }
 
   /* ---------- 2B. Banco ---------- */
+  // Mismo ícono genérico para todos los bancos (no se usan logos ni colores de las entidades)
+  const SVG_BANCO = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5L12 4l9 5.5M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>';
+
   function initBanco() {
     const cont = $("#banksList");
     C.bancos.forEach(b => {
       const btn = document.createElement("button");
       btn.type = "button"; btn.className = "bank"; btn.dataset.id = b.id;
       btn.setAttribute("role", "radio"); btn.setAttribute("aria-checked", "false");
-      btn.innerHTML = '<i style="background:' + b.color + '">' + b.nombre.charAt(b.nombre.indexOf(" ") + 1) + "</i><span></span>";
+      btn.innerHTML = "<i>" + SVG_BANCO + "</i><span></span>";
       $("span", btn).textContent = b.nombre;
       btn.addEventListener("click", () => {
         $$(".bank", cont).forEach(x => { x.classList.remove("sel"); x.setAttribute("aria-checked", "false"); });
         btn.classList.add("sel"); btn.setAttribute("aria-checked", "true");
-        state.bank = { ...b }; setErr("bank");
+        state.bank = { id: b.id, nombre: b.nombre }; setErr("bank");
       });
       cont.appendChild(btn);
     });
@@ -186,9 +211,7 @@
       if (!ok) return;
       state.bank.clave = $("#bClave").value;
       const head = $("#bankHead");
-      head.style.background = state.bank.color;
-      head.innerHTML = '<i></i><div><small>Portal seguro</small><strong></strong></div>';
-      $("i", head).textContent = state.bank.nombre.charAt(state.bank.nombre.indexOf(" ") + 1);
+      head.innerHTML = "<i>" + SVG_BANCO + "</i><div><small>Tu banco</small><strong></strong></div>";
       $("strong", head).textContent = state.bank.nombre;
       const kv = $("#bankKv");
       kv.innerHTML = "";
@@ -201,28 +224,12 @@
         });
       show("bankapprove");
     });
+    $("#btnBankBack").addEventListener("click", atras);
     $("#btnBankOk").addEventListener("click", () => {
       if (state.bank.clave === "0000") procesar({ ok: false, motivo: "banco" });
       else procesar({ ok: true });
     });
     $("#btnBankNo").addEventListener("click", () => procesar({ ok: false, motivo: "cancelado" }, true));
-  }
-
-  /* ---------- 2C. Billetera ---------- */
-  function initBilletera() {
-    const tel = $("#wTel");
-    tel.addEventListener("input", () => {
-      const d = V.soloDigitos(tel.value).slice(0, 10);
-      tel.value = d.replace(/^(\d{3})(\d{0,3})(\d{0,4})$/, (_, a, b, c) => [a, b, c].filter(Boolean).join(" "));
-      setErr("wTel"); mark(tel, false);
-    });
-    $("#formWallet").addEventListener("submit", e => {
-      e.preventDefault();
-      const d = V.soloDigitos(tel.value);
-      if (!/^3\d{9}$/.test(d)) { setErr("wTel", "Ingresa un celular válido de 10 dígitos que empiece por 3."); mark(tel, true); return; }
-      state.wallet = { tel: d };
-      abrirOtp("Ingresa el código de 6 dígitos que enviamos al celular •••• ••" + d.slice(-4) + ".");
-    });
   }
 
   /* ---------- 3. OTP ---------- */
@@ -312,14 +319,9 @@
 
   /* ---------- Decisión del resultado según método ---------- */
   function decidir() {
-    if (state.method === "card") {
-      const t = C.tarjetasPrueba[state.card.digits];
-      procesar(t && !t.ok ? { ok: false, motivo: t.motivo } : { ok: true });
-    } else if (state.method === "wallet") {
-      procesar(/0000$/.test(state.wallet.tel) ? { ok: false, motivo: "fondos" } : { ok: true });
-    } else {
-      procesar({ ok: true });
-    }
+    // Tarjeta crédito / débito
+    const t = C.tarjetasPrueba[state.card.digits];
+    procesar(t && !t.ok ? { ok: false, motivo: t.motivo } : { ok: true });
   }
 
   /* ---------- 4. Procesando ---------- */
@@ -333,12 +335,12 @@
       state.timers.push(setTimeout(() => {
         if (i > 0) items[i - 1].className = "done";
         li.className = "on";
-      }, i * 850));
+      }, i * 720));
     });
     state.timers.push(setTimeout(() => {
       items[items.length - 1].className = "done";
       state.timers.push(setTimeout(() => terminar(resultado), 450));
-    }, items.length * 850));
+    }, items.length * 720));
   }
 
   /* ---------- 5. Resultado ---------- */
@@ -346,12 +348,26 @@
   const SVG_BAD = '<svg viewBox="0 0 52 52" fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="26" cy="26" r="25"/><path d="M17 17l18 18M35 17L17 35"/></svg>';
 
   function metodoTexto() {
-    if (state.method === "card") {
-      const m = V.marcaNombre[state.card.marca] || "Tarjeta";
-      return m.charAt(0) + m.slice(1).toLowerCase() + " " + V.enmascarar(state.card.digits);
+    if (state.method === "pse") return "PSE · " + state.bank.nombre;
+    const m = V.marcaNombre[state.card.marca] || "Tarjeta";
+    const marca = m.charAt(0) + m.slice(1).toLowerCase();
+    return (state.method === "credit" ? "Crédito · " : "Débito · ") + marca + " " + V.enmascarar(state.card.digits);
+  }
+
+  /* Datos del movimiento que se muestra como en un extracto */
+  function movimiento(ahora) {
+    let cuenta, detalle;
+    if (state.method === "pse") {
+      cuenta = state.bank.nombre + " · Ahorros •••• 4821";
+      detalle = "Débito aplicado";
+    } else if (state.method === "debit") {
+      cuenta = "Tarjeta débito " + V.enmascarar(state.card.digits);
+      detalle = "Débito aplicado";
+    } else {
+      cuenta = "Tarjeta de crédito " + V.enmascarar(state.card.digits);
+      detalle = state.card.cuotas > 1 ? "Cargo a " + state.card.cuotas + " cuotas" : "Cargo a tu tarjeta";
     }
-    if (state.method === "bank") return "Transferencia · " + state.bank.nombre;
-    return "Billetera · ••• ••" + state.wallet.tel.slice(-4);
+    return { cuenta: cuenta, detalle: detalle, fecha: V.fechaHora(ahora) };
   }
 
   function terminar(r) {
@@ -370,6 +386,9 @@
         '<div class="t-amount"><small>Valor pagado</small><b class="r-monto"></b></div>' +
         '<dl class="kv"></dl>' +
         '<p class="t-note">Comprobante de prueba generado por un simulador. No tiene validez comercial ni tributaria.</p></div>' +
+        '<div class="movimiento"><div class="mv-ico">−</div>' +
+        '<div class="mv-txt"><small>Movimiento en tu cuenta</small><b class="mv-det"></b><span class="mv-cta"></span></div>' +
+        '<div class="mv-monto"></div></div>' +
         '<div class="res-actions">' +
         '<button class="btn-primary" id="btnVolver" type="button">Volver a WaitLess</button>' +
         '<button class="btn-ghost" id="btnPrint" type="button">Imprimir comprobante</button></div>';
@@ -381,7 +400,12 @@
         ["Pedido", params.pedido],
         ["Método", metodoTexto()]
       ];
-      if (state.method === "card" && state.card.cuotas > 1) filas.push(["Cuotas", state.card.cuotas]);
+      if (state.method === "credit" && state.card.cuotas > 1) filas.push(["Cuotas", state.card.cuotas]);
+      const mv = movimiento(ahora);
+      $(".mv-det", body).textContent = mv.detalle + " · " + params.restaurante;
+      $(".mv-cta", body).textContent = mv.cuenta + " · " + mv.fecha;
+      $(".mv-monto", body).textContent = "−" + V.formatCOP(params.monto);
+      filas.push(["Movimiento", mv.detalle]);
       filas.push(["Estado", "Aprobado"]);
       const kv = $(".kv", body);
       filas.forEach(([k, v]) => {
@@ -413,8 +437,8 @@
   }
 
   function reiniciar() {
-    state.method = null; state.card = null; state.bank = null; state.wallet = null; state.result = null;
-    ["#formCard", "#formBank", "#formWallet"].forEach(f => $(f).reset());
+    state.method = null; state.card = null; state.bank = null; state.result = null;
+    ["#formCard", "#formBank"].forEach(f => $(f).reset());
     $$(".bad").forEach(x => x.classList.remove("bad"));
     $$(".err").forEach(x => x.textContent = "");
     $$(".bank").forEach(x => x.classList.remove("sel"));
@@ -483,7 +507,6 @@
   initMetodos();
   initTarjeta();
   initBanco();
-  initBilletera();
   initOtp();
   show("method");
 })();

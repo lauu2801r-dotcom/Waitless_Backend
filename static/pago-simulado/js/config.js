@@ -18,12 +18,17 @@ WL.CONFIG = {
     "4000000000000069": { ok: false, motivo: "vencida" }
   },
 
-  // Bancos ficticios (no corresponden a entidades reales)
+  // Lista de bancos de Colombia: solo el NOMBRE, en texto y con el mismo estilo para todos
+  // (sin logos, colores ni pantallas de las entidades). Es una simulación de WaitLess Pay.
   bancos: [
-    { id: "aurora",   nombre: "Banco Aurora",   color: "#e4572e" },
-    { id: "meridian", nombre: "Banco Meridiano", color: "#2e86ab" },
-    { id: "condor",   nombre: "Banco Cóndor",   color: "#6a4c93" },
-    { id: "alba",     nombre: "Cooperativa Alba", color: "#3a9d5d" }
+    { id: "bancolombia", nombre: "Bancolombia" },
+    { id: "davivienda",  nombre: "Davivienda" },
+    { id: "bogota",      nombre: "Banco de Bogotá" },
+    { id: "bbva",        nombre: "BBVA Colombia" },
+    { id: "occidente",   nombre: "Banco de Occidente" },
+    { id: "popular",     nombre: "Banco Popular" },
+    { id: "avvillas",    nombre: "Banco AV Villas" },
+    { id: "cajasocial",  nombre: "Banco Caja Social" }
   ],
 
   cuotas: [1, 3, 6, 12],

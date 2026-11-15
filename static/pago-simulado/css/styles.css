@@ -117,8 +117,13 @@ h1{font-size:24px;line-height:1.2;color:var(--navy);margin-bottom:6px}
 .link-cancel{display:block;margin:6px auto 0;color:var(--ink-2);font-size:14px;text-decoration:underline;text-underline-offset:3px}
 .link-cancel:hover{color:var(--bad)}
 
-.btn-back{color:var(--brand-d);font-size:14px;margin-bottom:12px;padding:4px 0}
-.btn-back:hover{text-decoration:underline}
+.btn-back{
+  display:inline-flex;align-items:center;gap:6px;min-height:42px;margin-bottom:14px;padding:8px 16px;
+  color:var(--brand-d);font-size:15px;font-weight:600;background:var(--brand-l);border-radius:999px;
+  position:relative;z-index:5;-webkit-tap-highlight-color:transparent;
+}
+.btn-back:hover{background:#d3eeea}
+.btn-back:active{transform:scale(.97)}
 
 /* Tarjeta 3D */
 .card-wrap{perspective:1000px;margin:6px auto 22px;max-width:330px}
@@ -194,10 +199,10 @@ input.bad,select.bad{border-color:var(--bad);background:var(--bad-l)}
 .bank{
   display:flex;align-items:center;gap:10px;padding:12px;border:1.5px solid var(--line);border-radius:13px;background:#fff;text-align:left;font-weight:600;font-size:14px;transition:.15s;
 }
-.bank i{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:#fff;font-style:normal;font-weight:700;flex:none}
+.bank i{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:#fff;background:var(--navy);font-style:normal;flex:none}
 .bank:hover{border-color:var(--brand)}
 .bank.sel{border-color:var(--brand);background:var(--brand-l);box-shadow:0 0 0 3px rgba(11,122,117,.12)}
-.bank-head{display:flex;align-items:center;gap:12px;padding:14px;border-radius:14px;color:#fff;margin-bottom:20px}
+.bank-head{display:flex;align-items:center;gap:12px;padding:14px;border-radius:14px;color:#fff;margin-bottom:20px;background:linear-gradient(135deg,var(--brand),var(--navy))}
 .bank-head i{width:42px;height:42px;border-radius:12px;background:rgba(255,255,255,.22);display:grid;place-items:center;font-style:normal;font-weight:700;font-size:18px}
 .bank-head small{display:block;opacity:.8;font-size:12px}
 
@@ -256,6 +261,19 @@ input.bad,select.bad{border-color:var(--bad);background:var(--bad-l)}
 .ticket .kv>div:last-child{border-bottom:0}
 .t-note{text-align:center;font-size:12px;color:var(--ink-3);padding:6px 0 12px}
 .res-actions{display:flex;flex-direction:column;gap:10px}
+
+/* Movimiento (débito) */
+.movimiento{
+  display:flex;align-items:center;gap:12px;margin:0 0 18px;padding:14px;border-radius:14px;
+  background:#f6faf9;border:1px solid var(--line);animation:rise .5s .6s ease both;
+}
+.mv-ico{width:38px;height:38px;border-radius:12px;background:var(--bad-l);color:var(--bad);display:grid;place-items:center;font-size:22px;font-weight:700;flex:none}
+.mv-txt{flex:1;min-width:0;display:flex;flex-direction:column}
+.mv-txt small{color:var(--ink-3);font-size:11px;text-transform:uppercase;letter-spacing:.8px}
+.mv-txt b{font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mv-cta{font-size:12px;color:var(--ink-2)}
+.mv-monto{font-weight:700;font-size:16px;color:var(--bad);white-space:nowrap}
+@media print{.movimiento{break-inside:avoid}}
 
 /* Resumen */
 .sum-toggle{display:none}

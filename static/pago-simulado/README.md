@@ -33,9 +33,11 @@ Al terminar redirige a `retorno` agregando `estado` (`aprobado`, `rechazado`, `c
 JavaScript `WaitLessPay` (webview_flutter) y por `postMessage`.
 
 ## Datos de prueba
+Métodos: tarjeta de crédito (con cuotas), tarjeta débito y PSE · transferencia bancaria.
 - Tarjeta aprobada: `4242 4242 4242 4242`
 - Rechazada: `4000 0000 0000 0002`
 - Fondos insuficientes: `4000 0000 0000 9995`
 - Código de verificación (SMS simulado): `123456`
-- Banco: cualquier documento y clave; con la clave `0000` el banco rechaza.
-- Billetera: celular que empiece por 3; si termina en `0000` no tiene saldo.
+- PSE: lista de bancos de Colombia (solo el nombre, sin logos ni colores). Cualquier documento y
+  clave de prueba funcionan; con la clave `0000` el banco rechaza.
+- Botón "atrás": la app llama a `window.WL_atras()` para retroceder un paso dentro del portal.
